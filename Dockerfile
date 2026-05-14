@@ -30,5 +30,6 @@ ENTRYPOINT ["java", \
     "-Dspring.datasource.url=jdbc:${DATABASE_URL}", \
     "-Dspring.datasource.username=${DATABASE_USER}", \
     "-Dspring.datasource.password=${DATABASE_PASSWORD}", \
+    "-Dgroq.api.key=${GROQ_API_KEY}", \
     "-jar", "app.jar", \
     "--spring.profiles.active=prod"]
