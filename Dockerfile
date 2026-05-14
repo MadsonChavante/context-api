@@ -16,10 +16,8 @@ RUN mvn clean package -DskipTests
 FROM eclipse-temurin:21-jre-jammy
 WORKDIR /app
 
-COPY --from=build /app/target/context-api-1.0.0.jar app.jar
+# Copia o JAR (usando curinga para evitar erro de nome de versão)
+COPY --from=build /app/target/*.jar app.jar
 
-# Removemos o EXPOSE 8080 pois o Render usa portas dinâmicas via $PORT
-# Mudamos o ENTRYPOINT para o modo Shell para que as variáveis sejam interpretadas
-
+# O segredo está aqui: usamos "sh -c" para que o $PORT e as outras variáveis funcionem
 ENTRYPOINT ["sh", "-c", "java -Xmx300m -Xss512k -Dspring.datasource.url=jdbc:${DATABASE_URL} -Dspring.datasource.username=${DATABASE_USER} -Dspring.datasource.password=${DATABASE_PASSWORD} -Dserver.port=${PORT} -Dgroq.api.key=${GROQ_API_KEY} -jar app.jar --spring.profiles.active=prod"]
-
