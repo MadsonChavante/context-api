@@ -17,7 +17,8 @@ public class CorsConfig implements WebMvcConfigurer {
                 .allowedOriginPatterns(
                     "http://localhost:4200",
                     "http://localhost:8080",
-                    "https://localhost:4200"
+                    "https://localhost:4200",
+                    "https://coont.netlify.app"
                 )
                 .allowedMethods("GET", "POST", "PUT", "DELETE", "OPTIONS")
                 .allowedHeaders("*")
