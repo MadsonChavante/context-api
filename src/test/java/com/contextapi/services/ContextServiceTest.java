@@ -52,10 +52,6 @@ class ContextServiceTest {
         contextDTO.setContent("Test content");
     }
 
-    // -------------------------------------------------------------------------
-    // findById
-    // -------------------------------------------------------------------------
-
     @Nested
     @DisplayName("findById")
     class FindById {
@@ -83,10 +79,6 @@ class ContextServiceTest {
             verify(contextRepository).findById(999L);
         }
     }
-
-    // -------------------------------------------------------------------------
-    // findAll
-    // -------------------------------------------------------------------------
 
     @Nested
     @DisplayName("findAll")
@@ -121,10 +113,6 @@ class ContextServiceTest {
             assertTrue(result.getContent().isEmpty());
         }
     }
-
-    // -------------------------------------------------------------------------
-    // create
-    // -------------------------------------------------------------------------
 
     @Nested
     @DisplayName("create")
@@ -176,10 +164,6 @@ class ContextServiceTest {
             verify(aiService).analyze("Test content");
         }
     }
-
-    // -------------------------------------------------------------------------
-    // update
-    // -------------------------------------------------------------------------
 
     @Nested
     @DisplayName("update")
@@ -245,10 +229,6 @@ class ContextServiceTest {
             verifyNoInteractions(aiService);
         }
     }
-
-    // -------------------------------------------------------------------------
-    // delete
-    // -------------------------------------------------------------------------
 
     @Nested
     @DisplayName("delete")

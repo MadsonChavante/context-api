@@ -79,7 +79,7 @@ public class ContextService {
         log.info("Context deleted successfully with id: {}", id);
     }
 
-        // Helper methods
+
     private ContextDTO mapToDTO(Context context) {
         return new ContextDTO(context.getId(), context.getContent(), context.getAiAnalysis());
     }

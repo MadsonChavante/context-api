@@ -24,7 +24,6 @@ class AiServiceTest {
     private static final String VALID_KEY = "valid-key";
     private static final String MODEL     = "llama-3.1-8b-instant";
 
-    // WebClient chain mocks
     @Mock private WebClient                       webClient;
     @Mock private WebClient.RequestBodyUriSpec    uriSpec;
     @Mock private WebClient.RequestBodySpec       bodySpec;
@@ -32,17 +31,10 @@ class AiServiceTest {
     @Mock private WebClient.RequestHeadersSpec    headersSpec;
     @Mock private WebClient.ResponseSpec          responseSpec;
 
-    // -------------------------------------------------------------------------
-    // Helpers
-    // -------------------------------------------------------------------------
-
-    /** Builds an AiService with the shared WebClient mock and the given API key. */
     private AiService buildService(String apiKey) {
         return new AiService(webClient, apiKey, MODEL);
     }
 
-    /** Stubs the full WebClient call chain to return the given response map. */
-    @SuppressWarnings("unchecked")
     private void stubWebClientReturning(Map<String, Object> response) {
         lenient().when(webClient.post()).thenReturn(uriSpec);
         lenient().when(uriSpec.header(anyString(), anyString())).thenReturn(bodySpec);
@@ -51,7 +43,6 @@ class AiServiceTest {
         lenient().when(responseSpec.bodyToMono(Map.class)).thenReturn(Mono.just(response));
     }
 
-    /** Stubs the full WebClient call chain to throw the given exception. */
     @SuppressWarnings("unchecked")
     private void stubWebClientThrowing(RuntimeException ex) {
         lenient().when(webClient.post()).thenReturn(uriSpec);
@@ -61,14 +52,9 @@ class AiServiceTest {
         lenient().when(responseSpec.bodyToMono(Map.class)).thenThrow(ex);
     }
 
-    /** Builds a valid Groq-like response map with the given analysis text. */
     private Map<String, Object> groqResponse(String analysisText) {
         return Map.of("choices", List.of(Map.of("message", Map.of("content", analysisText))));
     }
-
-    // -------------------------------------------------------------------------
-    // analyze — API key absent
-    // -------------------------------------------------------------------------
 
     @Nested
     @DisplayName("analyze — API key absent")
@@ -97,10 +83,6 @@ class AiServiceTest {
         }
     }
 
-    // -------------------------------------------------------------------------
-    // analyze — successful response
-    // -------------------------------------------------------------------------
-
     @Nested
     @DisplayName("analyze — successful response")
     class AnalyzeSuccess {
@@ -127,10 +109,6 @@ class AiServiceTest {
             verify(webClient).post();
         }
     }
-
-    // -------------------------------------------------------------------------
-    // analyze — error handling
-    // -------------------------------------------------------------------------
 
     @Nested
     @DisplayName("analyze — error handling")

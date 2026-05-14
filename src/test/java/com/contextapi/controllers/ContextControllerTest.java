@@ -33,10 +33,6 @@ class ContextControllerTest {
     @InjectMocks
     private ContextController contextController;
 
-    // -------------------------------------------------------------------------
-    // findById
-    // -------------------------------------------------------------------------
-
     @Nested
     @DisplayName("findById")
     class FindById {
@@ -65,10 +61,6 @@ class ContextControllerTest {
             verify(contextService).findById(999L);
         }
     }
-
-    // -------------------------------------------------------------------------
-    // findAll
-    // -------------------------------------------------------------------------
 
     @Nested
     @DisplayName("findAll")
@@ -101,10 +93,6 @@ class ContextControllerTest {
             assertTrue(result.getBody().getContent().isEmpty());
         }
     }
-
-    // -------------------------------------------------------------------------
-    // create
-    // -------------------------------------------------------------------------
 
     @Nested
     @DisplayName("create")
@@ -141,10 +129,6 @@ class ContextControllerTest {
         }
     }
 
-    // -------------------------------------------------------------------------
-    // update
-    // -------------------------------------------------------------------------
-
     @Nested
     @DisplayName("update")
     class Update {
@@ -175,10 +159,6 @@ class ContextControllerTest {
             verify(contextService).update(eq(999L), any());
         }
     }
-
-    // -------------------------------------------------------------------------
-    // delete
-    // -------------------------------------------------------------------------
 
     @Nested
     @DisplayName("delete")
