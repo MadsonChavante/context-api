@@ -38,6 +38,7 @@ jobs:
     name: Qualidade de Código (SonarCloud)
     runs-on: ubuntu-latest
     needs: build-and-test
+    environment: coont
 
     steps:
       - name: Checkout do código
