@@ -33,3 +33,4 @@ ENTRYPOINT ["java", \
     "-Dgroq.api.key=${GROQ_API_KEY}", \
     "-jar", "app.jar", \
     "--spring.profiles.active=prod"]
+
