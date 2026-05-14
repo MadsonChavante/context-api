@@ -32,3 +32,4 @@ ENTRYPOINT ["java", \
     "-Dspring.datasource.password=${DATABASE_PASSWORD}", \
     "-jar", "app.jar", \
     "--spring.profiles.active=prod"]
+
