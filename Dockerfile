@@ -24,4 +24,11 @@ COPY --from=build /app/target/context-api-1.0.0.jar app.jar
 EXPOSE 8080
 
 # Comando para iniciar a aplicação com limites de memória para o plano free do Render
-ENTRYPOINT ["java", "-Xmx300m", "-Xss512k", "-jar", "app.jar", "--spring.profiles.active=prod"]
+ENTRYPOINT ["java", \
+    "-Xmx300m", \
+    "-Xss512k", \
+    "-Dspring.datasource.url=jdbc:${DATABASE_URL}", \
+    "-Dspring.datasource.username=${DATABASE_USER}", \
+    "-Dspring.datasource.password=${DATABASE_PASSWORD}", \
+    "-jar", "app.jar", \
+    "--spring.profiles.active=prod"]
