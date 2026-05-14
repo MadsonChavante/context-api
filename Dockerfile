@@ -16,21 +16,10 @@ RUN mvn clean package -DskipTests
 FROM eclipse-temurin:21-jre-jammy
 WORKDIR /app
 
-# Copia o JAR gerado no estágio anterior
-# O nome do JAR segue o padrão: artifactId-version.jar do seu pom.xml
 COPY --from=build /app/target/context-api-1.0.0.jar app.jar
 
-# Expõe a porta padrão do Spring Boot
-EXPOSE 8080
+# Removemos o EXPOSE 8080 pois o Render usa portas dinâmicas via $PORT
+# Mudamos o ENTRYPOINT para o modo Shell para que as variáveis sejam interpretadas
 
-# Comando para iniciar a aplicação com limites de memória para o plano free do Render
-ENTRYPOINT ["java", \
-    "-Xmx300m", \
-    "-Xss512k", \
-    "-Dspring.datasource.url=jdbc:${DATABASE_URL}", \
-    "-Dspring.datasource.username=${DATABASE_USER}", \
-    "-Dspring.datasource.password=${DATABASE_PASSWORD}", \
-    "-Dgroq.api.key=${GROQ_API_KEY}", \
-    "-jar", "app.jar", \
-    "--spring.profiles.active=prod"]
+ENTRYPOINT ["sh", "-c", "java -Xmx300m -Xss512k -Dspring.datasource.url=jdbc:${DATABASE_URL} -Dspring.datasource.username=${DATABASE_USER} -Dspring.datasource.password=${DATABASE_PASSWORD} -Dserver.port=${PORT} -Dgroq.api.key=${GROQ_API_KEY} -jar app.jar --spring.profiles.active=prod"]
 
