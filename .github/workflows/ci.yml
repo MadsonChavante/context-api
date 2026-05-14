@@ -189,15 +189,3 @@ jobs:
                 console.log(`Issue criada: ${title}`);
               }
             }
-
-  deploy:
-    name: Deploy → Render
-    runs-on: ubuntu-latest
-    needs: [build-and-test, sonar]
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-
-    steps:
-      - name: Trigger deploy no Render
-        run: |
-          curl --silent --show-error --fail \
-            -X POST "${{ secrets.RENDER_DEPLOY_HOOK_URL }}"
