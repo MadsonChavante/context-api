@@ -1,27 +1,28 @@
 # 1. Estágio de Build
-# Usamos o Maven com JDK 21 para compilar o projeto
 FROM maven:3.9.6-eclipse-temurin-21 AS build
 WORKDIR /app
 
-# Copia apenas o pom.xml primeiro para baixar as dependências (otimiza o cache do Docker)
 COPY pom.xml .
-RUN mvn dependency:go-offline
+RUN mvn dependency:go-offline -q
 
-# Copia o código fonte e gera o jar
 COPY src ./src
-RUN mvn clean package -DskipTests
+RUN mvn clean package -DskipTests -q
 
 # 2. Estágio de Execução
-# Usamos uma imagem JRE 21 leve para rodar a aplicação
 FROM eclipse-temurin:21-jre-jammy
 WORKDIR /app
 
-# Copia o JAR (usando curinga para evitar erro de nome de versão)
+# Cria usuário não-root por segurança
+RUN addgroup --system spring && adduser --system --ingroup spring spring
+USER spring
+
 COPY --from=build /app/target/*.jar app.jar
 
-# Removemos o EXPOSE 8080 pois o Render usa portas dinâmicas via $PORT
+# Variáveis de ambiente com defaults sensatos
+ENV JAVA_OPTS="-Xmx300m -Xss512k -XX:+UseContainerSupport -XX:MaxRAMPercentage=75.0"
+
 ENTRYPOINT ["sh", "-c", "java \
-  -Xmx300m -Xss512k \
+  ${JAVA_OPTS} \
   -Dserver.port=${PORT:-8080} \
   -Dspring.datasource.url=jdbc:${DATABASE_URL} \
   -Dspring.datasource.username=${DATABASE_USER} \
