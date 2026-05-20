@@ -17,23 +17,22 @@ public class AiService {
     private final String apiKey;
     private final String model;
 
-    private static final String PROMPT_TEMPLATE = "Você é um assistente de aprendizado de inglês descontraído e direto ao ponto.\n\n"
-            +
-            "O usuário quer aprender inglês ou tirar dúvidas com base neste contexto:\n" +
-            "\"%s\"\n\n" +
-            "Responda em no máximo 2-3 linhas, em português, dizendo apenas o que entendeu do contexto.\n\n" +
-            "Regras:\n" +
-            "- Apenas diga o que entendeu do contexto, sem explicar ou aprofundar\n" +
-            "- Mantenha o foco em inglês com base no contexto do usuário\n" +
-            "- Não fuja do tema\n" +
-            "- Não faça perguntas nem convide para continuar a conversa\n" +
-            "- Se houver termos em inglês faça a tradução de forma natural para portugues na resposta\n" +
-            "- Se houver termos em português faça a tradução de forma natural para inglês na resposta\n" +
-            "- Nada de saudações ou introduções";
+    private static final String PROMPT_TEMPLATE = "Voce e um assistente de aprendizado de ingles descontraido e direto ao ponto.\n\n"
+            + "O usuario quer aprender ingles ou tirar duvidas com base neste contexto:\n"
+            + "\"%s\"\n\n"
+            + "Responda em no maximo 2-3 linhas, em portugues, dizendo apenas o que entendeu do contexto.\n\n"
+            + "Regras:\n"
+            + "- Apenas diga o que entendeu do contexto, sem explicar ou aprofundar\n"
+            + "- Mantenha o foco em ingles com base no contexto do usuario\n"
+            + "- Nao fuja do tema\n"
+            + "- Nao faca perguntas nem convide para continuar a conversa\n"
+            + "- Se houver termos em ingles faca a traducao de forma natural para portugues na resposta\n"
+            + "- Se houver termos em portugues faca a traducao de forma natural para ingles na resposta\n"
+            + "- Nada de saudacoes ou introducoes";
 
     public AiService(
             WebClient groqWebClient,
-            @Value("${groq.api.key}") String apiKey,
+            @Value("${groq.api.key:}") String apiKey,
             @Value("${groq.model}") String model) {
         this.webClient = groqWebClient;
         this.apiKey = apiKey;
@@ -41,22 +40,24 @@ public class AiService {
     }
 
     public String analyze(String content) {
+        String sanitizedContent = sanitizeForPromptInjection(content);
+        String prompt = String.format(PROMPT_TEMPLATE, sanitizedContent);
+        return complete(prompt, 300, 0.7);
+    }
+
+    public String complete(String prompt, int maxTokens, double temperature) {
         if (apiKey == null || apiKey.isBlank()) {
-            log.warn("GROQ_API_KEY not configured, skipping AI analysis");
+            log.warn("GROQ_API_KEY not configured, skipping AI completion");
             return null;
         }
 
         try {
-            // Sanitizar conteúdo contra prompt injection
-            String sanitizedContent = sanitizeForPromptInjection(content);
-            String prompt = String.format(PROMPT_TEMPLATE, sanitizedContent);
-
             Map<String, Object> message = Map.of("role", "user", "content", prompt);
             Map<String, Object> requestBody = Map.of(
                     "model", model,
                     "messages", List.of(message),
-                    "max_tokens", 300,
-                    "temperature", 0.7);
+                    "max_tokens", maxTokens,
+                    "temperature", temperature);
 
             Map<?, ?> response = webClient.post()
                     .header("Authorization", "Bearer " + apiKey)
@@ -80,28 +81,22 @@ public class AiService {
                 }
             }
         } catch (Exception e) {
-            log.error("Failed to get AI analysis from Groq: {}", e.getMessage());
+            log.error("Failed to get AI completion from Groq: {}", e.getMessage());
         }
 
         return null;
     }
 
-    /**
-     * Sanitiza conteúdo para prevenir prompt injection
-     * Remove ou escapa caracteres perigosos que poderiam interferir no prompt
-     */
     private String sanitizeForPromptInjection(String content) {
         if (content == null) {
             return "";
         }
 
-        // Remover quebras de linha múltiplas e caracteres de controle perigosos
         String sanitized = content
-                .replaceAll("\\n\\n+", "\n") // Múltiplas quebras de linha
-                .replaceAll("[\\u0000-\\u001F\\u007F]", "") // Caracteres de controle
+                .replaceAll("\\n\\n+", "\n")
+                .replaceAll("[\\u0000-\\u001F\\u007F]", "")
                 .trim();
 
-        // Limitar tamanho para segurança adicional
         if (sanitized.length() > 1000) {
             sanitized = sanitized.substring(0, 1000);
         }
