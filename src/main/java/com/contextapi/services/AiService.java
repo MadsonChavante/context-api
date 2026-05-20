@@ -27,7 +27,8 @@ public class AiService {
             "- Mantenha o foco em inglês com base no contexto do usuário\n" +
             "- Não fuja do tema\n" +
             "- Não faça perguntas nem convide para continuar a conversa\n" +
-            "- Se houver termos em inglês relevantes, mencione a tradução de forma natural na resposta\n" +
+            "- Se houver termos em inglês faça a tradução de forma natural para portugues na resposta\n" +
+            "- Se houver termos em português faça a tradução de forma natural para inglês na resposta\n" +
             "- Nada de saudações ou introduções";
 
     public AiService(
@@ -46,7 +47,9 @@ public class AiService {
         }
 
         try {
-            String prompt = String.format(PROMPT_TEMPLATE, content);
+            // Sanitizar conteúdo contra prompt injection
+            String sanitizedContent = sanitizeForPromptInjection(content);
+            String prompt = String.format(PROMPT_TEMPLATE, sanitizedContent);
 
             Map<String, Object> message = Map.of("role", "user", "content", prompt);
             Map<String, Object> requestBody = Map.of(
@@ -81,5 +84,28 @@ public class AiService {
         }
 
         return null;
+    }
+
+    /**
+     * Sanitiza conteúdo para prevenir prompt injection
+     * Remove ou escapa caracteres perigosos que poderiam interferir no prompt
+     */
+    private String sanitizeForPromptInjection(String content) {
+        if (content == null) {
+            return "";
+        }
+
+        // Remover quebras de linha múltiplas e caracteres de controle perigosos
+        String sanitized = content
+                .replaceAll("\\n\\n+", "\n") // Múltiplas quebras de linha
+                .replaceAll("[\\u0000-\\u001F\\u007F]", "") // Caracteres de controle
+                .trim();
+
+        // Limitar tamanho para segurança adicional
+        if (sanitized.length() > 1000) {
+            sanitized = sanitized.substring(0, 1000);
+        }
+
+        return sanitized;
     }
 }

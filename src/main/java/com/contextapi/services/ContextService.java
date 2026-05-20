@@ -37,8 +37,10 @@ public class ContextService {
                 .map(this::mapToDTO);
     }
 
-        public ContextDTO create(ContextDTO contextDTO) {
+    public ContextDTO create(ContextDTO contextDTO) {
         log.debug("Creating new context with content: {}", contextDTO.getContent());
+        // Sanitizar conteúdo antes de salvar
+        contextDTO.setContent(sanitizeContent(contextDTO.getContent()));
         Context context = mapToEntity(contextDTO);
         Context savedContext = contextRepository.save(context);
         log.info("Context created successfully with id: {}", savedContext.getId());
@@ -50,14 +52,16 @@ public class ContextService {
         return mapToDTO(savedContext);
     }
 
-        public ContextDTO update(Long id, ContextDTO contextDTO) {
+    public ContextDTO update(Long id, ContextDTO contextDTO) {
         log.debug("Updating context with id: {}", id);
         Context context = contextRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException(
                         String.format("Context not found with id: %d", id)
                 ));
 
-        context.setContent(contextDTO.getContent());
+        // Sanitizar conteúdo antes de salvar
+        String sanitizedContent = sanitizeContent(contextDTO.getContent());
+        context.setContent(sanitizedContent);
         context.setAiAnalysis(null);
         Context updatedContext = contextRepository.save(context);
         log.info("Context updated successfully with id: {}", id);
@@ -79,6 +83,30 @@ public class ContextService {
         log.info("Context deleted successfully with id: {}", id);
     }
 
+
+    /**
+     * Sanitiza e valida o conteúdo do contexto
+     * Remove caracteres perigosos e limita o tamanho
+     */
+    private String sanitizeContent(String content) {
+        if (content == null) {
+            return "";
+        }
+
+        // Remover caracteres de controle e quebras de linha múltiplas
+        String sanitized = content
+                .replaceAll("\\n\\n+", "\n") // Múltiplas quebras de linha
+                .replaceAll("[\\u0000-\\u001F\\u007F]", "") // Caracteres de controle
+                .trim();
+
+        // Limitar tamanho a 1000 caracteres
+        if (sanitized.length() > 1000) {
+            log.warn("Content truncated from {} to 1000 characters", sanitized.length());
+            sanitized = sanitized.substring(0, 1000);
+        }
+
+        return sanitized;
+    }
 
     private ContextDTO mapToDTO(Context context) {
         return new ContextDTO(context.getId(), context.getContent(), context.getAiAnalysis());
