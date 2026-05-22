@@ -39,7 +39,6 @@ public class ContextService {
 
     public ContextDTO create(ContextDTO contextDTO) {
         log.debug("Creating new context with content: {}", contextDTO.getContent());
-        // Sanitizar conteúdo antes de salvar
         contextDTO.setContent(sanitizeContent(contextDTO.getContent()));
         Context context = mapToEntity(contextDTO);
         Context savedContext = contextRepository.save(context);
@@ -59,7 +58,6 @@ public class ContextService {
                         String.format("Context not found with id: %d", id)
                 ));
 
-        // Sanitizar conteúdo antes de salvar
         String sanitizedContent = sanitizeContent(contextDTO.getContent());
         context.setContent(sanitizedContent);
         context.setAiAnalysis(null);
@@ -84,22 +82,16 @@ public class ContextService {
     }
 
 
-    /**
-     * Sanitiza e valida o conteúdo do contexto
-     * Remove caracteres perigosos e limita o tamanho
-     */
     private String sanitizeContent(String content) {
         if (content == null) {
             return "";
         }
 
-        // Remover caracteres de controle e quebras de linha múltiplas
         String sanitized = content
-                .replaceAll("\\n\\n+", "\n") // Múltiplas quebras de linha
-                .replaceAll("[\\u0000-\\u001F\\u007F]", "") // Caracteres de controle
+                .replaceAll("\\n\\n+", "\n")
+                .replaceAll("[\\u0000-\\u001F\\u007F]", "")
                 .trim();
 
-        // Limitar tamanho a 1000 caracteres
         if (sanitized.length() > 1000) {
             log.warn("Content truncated from {} to 1000 characters", sanitized.length());
             sanitized = sanitized.substring(0, 1000);

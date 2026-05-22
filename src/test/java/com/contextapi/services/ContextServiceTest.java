@@ -127,8 +127,8 @@ class ContextServiceTest {
             savedWithAi.setAiAnalysis("Resumo gerado pela IA");
 
             when(contextRepository.save(any(Context.class)))
-                    .thenReturn(context)          // 1st save — persists entity
-                    .thenReturn(savedWithAi);     // 2nd save — persists AI analysis
+                    .thenReturn(context)
+                    .thenReturn(savedWithAi);
             when(aiService.analyze("Test content")).thenReturn("Resumo gerado pela IA");
 
             ContextDTO result = contextService.create(contextDTO);
@@ -187,8 +187,8 @@ class ContextServiceTest {
 
             when(contextRepository.findById(1L)).thenReturn(Optional.of(context));
             when(contextRepository.save(any(Context.class)))
-                    .thenReturn(updated)        // 1st save — clears aiAnalysis
-                    .thenReturn(updatedWithAi); // 2nd save — persists new analysis
+                    .thenReturn(updated)
+                    .thenReturn(updatedWithAi);
             when(aiService.analyze("Updated content")).thenReturn("Nova análise");
 
             ContextDTO result = contextService.update(1L, updateDTO);
@@ -214,7 +214,6 @@ class ContextServiceTest {
 
             contextService.update(1L, updateDTO);
 
-            // aiAnalysis must be null before the first save
             verify(contextRepository, times(2)).save(argThat(c -> c.getAiAnalysis() == null || c.getAiAnalysis() != null));
             verify(aiService).analyze("New content");
         }
