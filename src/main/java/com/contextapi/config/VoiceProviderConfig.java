@@ -9,6 +9,13 @@ import org.springframework.web.reactive.function.client.WebClient;
 @Configuration
 public class VoiceProviderConfig {
 
+    @Value("${voice.stt.provider:google}")
+    private String sttProvider;
+
+    @Value("${voice.tts.provider:google}")
+    private String ttsProvider;
+
+    // Google Cloud configs
     @Value("${google.cloud.api.key:}")
     private String googleApiKey;
 
@@ -27,19 +34,46 @@ public class VoiceProviderConfig {
     @Value("${google.cloud.tts.speaking-rate:1.0}")
     private String speakingRate;
 
+    // OpenAI configs
+    @Value("${openai.api.key:}")
+    private String openaiApiKey;
+
+    @Value("${openai.stt.model:whisper-1}")
+    private String openaiSttModel;
+
+    @Value("${openai.tts.model:tts-1}")
+    private String openaiTtsModel;
+
+    @Value("${openai.tts.voice:alloy}")
+    private String openaiTtsVoice;
+
     @Bean
     public SpeechToTextProvider speechToTextProvider(WebClient webClient) {
+        if ("openai".equalsIgnoreCase(sttProvider)) {
+            if (openaiApiKey != null && !openaiApiKey.isBlank()) {
+                return new OpenAiSTTProvider(webClient, openaiApiKey, openaiSttModel);
+            }
+        }
+
         if (googleApiKey != null && !googleApiKey.isBlank()) {
             return new GoogleCloudSTTProvider(webClient, googleApiKey, sttLanguage, sttEncoding);
         }
+
         return new NoOpSpeechToTextProvider();
     }
 
     @Bean
     public TextToSpeechProvider textToSpeechProvider(WebClient webClient) {
+        if ("openai".equalsIgnoreCase(ttsProvider)) {
+            if (openaiApiKey != null && !openaiApiKey.isBlank()) {
+                return new OpenAiTTSProvider(webClient, openaiApiKey, openaiTtsModel, openaiTtsVoice);
+            }
+        }
+
         if (googleApiKey != null && !googleApiKey.isBlank()) {
             return new GoogleCloudTTSProvider(webClient, googleApiKey, ttsLanguage, ttsVoice, speakingRate);
         }
+
         return new NoOpTextToSpeechProvider();
     }
 }
