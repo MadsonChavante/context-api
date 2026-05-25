@@ -3,8 +3,6 @@ package com.contextapi.voice;
 import com.contextapi.providers.AiProvider;
 import com.contextapi.providers.SpeechToTextProvider;
 import com.contextapi.providers.TextToSpeechProvider;
-import org.springframework.boot.web.embedded.tomcat.TomcatServletWebServerFactory;
-import org.springframework.boot.web.server.WebServerFactoryCustomizer;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.web.socket.config.annotation.EnableWebSocket;
