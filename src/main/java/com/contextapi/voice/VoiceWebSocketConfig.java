@@ -1,8 +1,8 @@
 package com.contextapi.voice;
 
-import com.contextapi.providers.AiProvider;
-import com.contextapi.providers.SpeechToTextProvider;
-import com.contextapi.providers.TextToSpeechProvider;
+import com.contextapi.repositories.LessonExerciseRepository;
+import com.contextapi.repositories.LessonRepository;
+import com.contextapi.services.LessonService;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.web.socket.config.annotation.EnableWebSocket;
@@ -14,16 +14,16 @@ import org.springframework.web.socket.server.standard.ServletServerContainerFact
 @EnableWebSocket
 public class VoiceWebSocketConfig implements WebSocketConfigurer {
 
-    private final AiProvider aiProvider;
-    private final SpeechToTextProvider sttProvider;
-    private final TextToSpeechProvider ttsProvider;
+    private final VoiceSessionService voiceSessionService;
 
-    public VoiceWebSocketConfig(AiProvider aiProvider,
-                                 SpeechToTextProvider sttProvider,
-                                 TextToSpeechProvider ttsProvider) {
-        this.aiProvider = aiProvider;
-        this.sttProvider = sttProvider;
-        this.ttsProvider = ttsProvider;
+    public VoiceWebSocketConfig(
+            com.contextapi.providers.SpeechToTextProvider sttProvider,
+            com.contextapi.providers.TextToSpeechProvider ttsProvider,
+            LessonRepository lessonRepository,
+            LessonExerciseRepository exerciseRepository,
+            LessonService lessonService) {
+        this.voiceSessionService = new VoiceSessionService(
+                sttProvider, ttsProvider, lessonRepository, exerciseRepository, lessonService);
     }
 
     @Override
@@ -42,12 +42,7 @@ public class VoiceWebSocketConfig implements WebSocketConfigurer {
     }
 
     @Bean
-    public VoiceSessionService voiceSessionService() {
-        return new VoiceSessionService(aiProvider, sttProvider, ttsProvider);
-    }
-
-    @Bean
     public VoiceSessionHandler voiceSessionHandler() {
-        return new VoiceSessionHandler(voiceSessionService());
+        return new VoiceSessionHandler(voiceSessionService);
     }
 }

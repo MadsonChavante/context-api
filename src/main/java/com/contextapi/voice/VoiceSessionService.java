@@ -1,14 +1,18 @@
 package com.contextapi.voice;
 
-import com.contextapi.providers.AiProvider;
+import com.contextapi.dtos.LessonDTO;
+import com.contextapi.dtos.SubmitAnswerRequest;
+import com.contextapi.entities.Lesson;
+import com.contextapi.entities.LessonExercise;
+import com.contextapi.enums.LessonStatus;
 import com.contextapi.providers.SpeechToTextProvider;
 import com.contextapi.providers.TextToSpeechProvider;
+import com.contextapi.repositories.LessonExerciseRepository;
+import com.contextapi.repositories.LessonRepository;
+import com.contextapi.services.LessonService;
 import lombok.extern.slf4j.Slf4j;
 
-import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Consumer;
 
 @Slf4j
@@ -17,104 +21,123 @@ public class VoiceSessionService {
     public record ProcessResult(byte[] audio, String transcript, String responseText) {}
     public record GreetingResult(byte[] audio, String greetingText) {}
 
-    private final AiProvider aiProvider;
     private final SpeechToTextProvider sttProvider;
     private final TextToSpeechProvider ttsProvider;
-    private final Map<String, List<VoiceMessage>> conversationHistory = new ConcurrentHashMap<>();
+    private final LessonRepository lessonRepository;
+    private final LessonExerciseRepository exerciseRepository;
+    private final LessonService lessonService;
 
-    private static final String SYSTEM_PROMPT = """
-            You are a friendly and encouraging English teacher (professor de ingles) helping a Brazilian student.
-            Always refer to yourself in first person as "I" or "me" or "your teacher".
-            Keep your responses short (2-3 sentences max), in Portuguese mixed with English when helpful.
-            Be supportive and correct gently when the student makes mistakes.
-            Focus on practical, everyday English that the student can use immediately.
-            If the student asks about grammar, explain briefly with a simple example.
-            """;
-
-    private static final String GREETING_PROMPT = """
-            You are an English teacher called "Teacher" starting a voice conversation with a Brazilian student.
-            Greet the student warmly in first person (I am your teacher, my name is Teacher).
-            Say 2 short sentences: introduce yourself as the English teacher and ask how they are.
-            Mix Portuguese and English naturally. Be warm and encouraging.
-            """;
-
-    public VoiceSessionService(AiProvider aiProvider,
-                                SpeechToTextProvider sttProvider,
-                                TextToSpeechProvider ttsProvider) {
-        this.aiProvider = aiProvider;
+    public VoiceSessionService(SpeechToTextProvider sttProvider,
+                                TextToSpeechProvider ttsProvider,
+                                LessonRepository lessonRepository,
+                                LessonExerciseRepository exerciseRepository,
+                                LessonService lessonService) {
         this.sttProvider = sttProvider;
         this.ttsProvider = ttsProvider;
+        this.lessonRepository = lessonRepository;
+        this.exerciseRepository = exerciseRepository;
+        this.lessonService = lessonService;
     }
 
     /**
-     * Starts a new voice session with an AI-generated greeting.
+     * Starts a voice session tied to the active lesson.
      */
     public void startSession(String sessionId, Consumer<GreetingResult> callback) {
-        List<VoiceMessage> history = conversationHistory
-                .computeIfAbsent(sessionId, k -> new ArrayList<>());
+        Lesson lesson = lessonRepository
+                .findFirstByStatusOrderByCreatedAtDesc(LessonStatus.IN_PROGRESS)
+                .orElse(null);
 
-        String greeting = aiProvider.complete(GREETING_PROMPT, 100, 0.7);
-        if (greeting == null || greeting.isBlank()) {
-            greeting = "Hello! I'm your English teacher. How are you today?";
+        if (lesson == null) {
+            callback.accept(new GreetingResult(null,
+                    "Nenhuma aula ativa. Crie uma aula no modo texto primeiro."));
+            return;
         }
-        greeting = greeting.trim();
-        history.add(new VoiceMessage("assistant", greeting));
+
+        // Use repository directly to avoid LazyInitializationException
+        String greeting;
+        List<LessonExercise> allExercises = exerciseRepository.findByLessonIdOrderByCreatedAtAsc(lesson.getId());
+        LessonExercise current = allExercises.stream()
+                .filter(e -> !e.isAnswered())
+                .findFirst()
+                .orElse(null);
+
+        if (current != null) {
+            greeting = "Traduza para o ingles: " + current.getPromptPt();
+        } else {
+            greeting = lesson.getIntro() != null && !lesson.getIntro().isBlank()
+                    ? lesson.getIntro()
+                    : "Pronto para praticar! Fale a traducao da frase que aparecer na tela.";
+        }
 
         byte[] audio = ttsProvider.isConfigured() ? ttsProvider.synthesize(greeting) : null;
         callback.accept(new GreetingResult(audio, greeting));
     }
 
     /**
-     * Processes a voice input from the user. The callback receives a ProcessResult
-     * containing the user transcript, teacher response text, and optionally TTS audio.
+     * Processes a voice input: transcribe and submit to LessonService.
      */
     public void processVoiceInput(String sessionId, byte[] audioData,
                                    Consumer<ProcessResult> callback) {
+        Lesson lesson = lessonRepository
+                .findFirstByStatusOrderByCreatedAtDesc(LessonStatus.IN_PROGRESS)
+                .orElse(null);
+
+        if (lesson == null) {
+            callback.accept(new ProcessResult(null, "",
+                    "Nenhuma aula ativa. Ative o modo aula primeiro."));
+            return;
+        }
+
+        // Use repository directly to avoid LazyInitializationException
+        List<LessonExercise> allExercises = exerciseRepository.findByLessonIdOrderByCreatedAtAsc(lesson.getId());
+        LessonExercise current = allExercises.stream()
+                .filter(e -> !e.isAnswered())
+                .findFirst()
+                .orElse(null);
+
+        if (current == null) {
+            callback.accept(new ProcessResult(null, "",
+                    "Nao ha exercicio pendente. Aguarde o proximo exercicio."));
+            return;
+        }
+
+        // Transcribe
         String transcript;
         if (sttProvider.isConfigured()) {
             transcript = sttProvider.transcribe(audioData, "webm");
             if (transcript == null || transcript.isBlank()) {
-                callback.accept(new ProcessResult(null, "", "Nao entendi. Pode repetir?"));
+                callback.accept(new ProcessResult(null, "", ""));
                 return;
             }
         } else {
-            callback.accept(new ProcessResult(null, "", "STT nao configurado. Use o teclado por enquanto."));
+            callback.accept(new ProcessResult(null, "", "STT nao configurado."));
             return;
         }
 
-        List<VoiceMessage> history = conversationHistory
-                .computeIfAbsent(sessionId, k -> new ArrayList<>());
-        history.add(new VoiceMessage("user", transcript));
+        // Submit via LessonService (which classifies, evaluates, and auto-generates next)
+        SubmitAnswerRequest req = new SubmitAnswerRequest();
+        req.setExerciseId(current.getId());
+        req.setAnswer(transcript);
 
-        String aiResponse = generateTeacherResponse(history, transcript);
-        history.add(new VoiceMessage("assistant", aiResponse));
+        try {
+            LessonDTO result = lessonService.submitAnswer(lesson.getId(), req);
 
-        if (history.size() > 20) {
-            history.subList(0, 2).clear();
+            // Build response text — lastTeacherMessage or feedback
+            String responseText = result.getLastTeacherMessage();
+            if (responseText == null || responseText.isBlank()) {
+                responseText = "Recebido!";
+            }
+
+            byte[] audio = ttsProvider.isConfigured() ? ttsProvider.synthesize(responseText) : null;
+            callback.accept(new ProcessResult(audio, transcript, responseText));
+        } catch (Exception e) {
+            log.error("Failed to submit voice answer for session {}: {}", sessionId, e.getMessage());
+            callback.accept(new ProcessResult(null, transcript,
+                    "Erro ao processar resposta: " + e.getMessage()));
         }
-
-        byte[] audio = ttsProvider.isConfigured() ? ttsProvider.synthesize(aiResponse) : null;
-        callback.accept(new ProcessResult(audio, transcript, aiResponse));
-    }
-
-    private String generateTeacherResponse(List<VoiceMessage> history, String transcript) {
-        StringBuilder prompt = new StringBuilder(SYSTEM_PROMPT);
-        prompt.append("\n\nConversation history:\n");
-        for (VoiceMessage msg : history) {
-            prompt.append(msg.role()).append(": ").append(msg.content()).append("\n");
-        }
-
-        String response = aiProvider.complete(prompt.toString(), 200, 0.8);
-        if (response == null || response.isBlank()) {
-            return "Desculpe, nao consegui processar sua pergunta. Tente novamente!";
-        }
-        return response.trim();
     }
 
     public void endSession(String sessionId) {
-        conversationHistory.remove(sessionId);
         log.debug("Voice session ended: {}", sessionId);
     }
-
-    private record VoiceMessage(String role, String content) {}
 }

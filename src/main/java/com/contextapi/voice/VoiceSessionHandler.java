@@ -82,15 +82,20 @@ public class VoiceSessionHandler extends BinaryWebSocketHandler {
         log.debug("Processing audio from session {}: {} bytes", session.getId(), audioData.length);
 
         voiceSessionService.processVoiceInput(session.getId(), audioData, result -> {
-            // Send user transcript first (shows as "Você" in frontend)
+            // Only send transcript — no AI response
             if (!result.transcript().isBlank()) {
                 sendTextMessage(session, "{\"type\":\"transcript\",\"text\":\"" + escapeJson(result.transcript()) + "\"}");
             }
-            // Send teacher response text
-            sendTextMessage(session, "{\"type\":\"response\",\"text\":\"" + escapeJson(result.responseText()) + "\"}");
-            // Send TTS audio if available (triggers "speaking" state)
+            // Send teacher response text and TTS
+            if (!result.responseText().isBlank()) {
+                sendTextMessage(session, "{\"type\":\"response\",\"text\":\"" + escapeJson(result.responseText()) + "\"}");
+            }
             if (result.audio() != null) {
                 sendBinaryMessage(session, result.audio());
+            }
+            // Send error when both transcript and response are empty
+            if (result.transcript().isBlank() && result.responseText().isBlank()) {
+                sendTextMessage(session, "{\"type\":\"error\",\"message\":\"Rate limit do STT atingido. Tente novamente em instantes.\"}");
             }
         });
     }
