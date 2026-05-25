@@ -7,8 +7,8 @@ import lombok.Data;
 @Data
 public class SubmitAnswerRequest {
 
-    @NotNull(message = "Lesson item id is required")
-    private Long itemId;
+    @NotNull(message = "Exercise id is required")
+    private Long exerciseId;
 
     @NotBlank(message = "Answer cannot be blank")
     private String answer;

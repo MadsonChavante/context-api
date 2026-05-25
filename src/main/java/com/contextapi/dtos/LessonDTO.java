@@ -19,5 +19,13 @@ public class LessonDTO {
     private String finalFeedback;
     private LocalDateTime createdAt;
     private LocalDateTime completedAt;
-    private List<LessonItemDTO> items;
+    private int exerciseCount;
+    /** Current exercise (if exists and unanswered) */
+    private ExerciseDTO currentExercise;
+    /** The teacher's last message (feedback on last answer, or answer to a doubt) */
+    private String lastTeacherMessage;
+    /** Whether the last interaction was a doubt (question), not a translation */
+    private boolean lastWasDoubt;
+    /** Per-context statistics */
+    private List<ContextStatsDTO> contextStats;
 }

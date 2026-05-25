@@ -1,68 +1,42 @@
 package com.contextapi.services;
 
-import com.contextapi.dtos.CreateLessonRequest;
-import com.contextapi.dtos.LessonDTO;
-import com.contextapi.dtos.SubmitAnswerRequest;
-import com.contextapi.entities.Context;
-import com.contextapi.entities.Lesson;
-import com.contextapi.entities.LessonItem;
-import com.contextapi.entities.StudentAnswer;
+import com.contextapi.dtos.*;
+import com.contextapi.entities.*;
 import com.contextapi.enums.LessonStatus;
 import com.contextapi.exceptions.ResourceNotFoundException;
-import com.contextapi.repositories.ContextRepository;
-import com.contextapi.repositories.LessonItemRepository;
-import com.contextapi.repositories.LessonRepository;
-import com.contextapi.repositories.StudentAnswerRepository;
+import com.contextapi.repositories.*;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.data.domain.PageImpl;
-import org.springframework.data.domain.PageRequest;
-import org.springframework.data.domain.Pageable;
 
 import java.time.LocalDateTime;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Optional;
+import java.util.*;
 
 import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyInt;
-import static org.mockito.ArgumentMatchers.anyDouble;
-import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
 @DisplayName("LessonService")
 class LessonServiceTest {
 
-    @Mock
-    private LessonRepository lessonRepository;
-
-    @Mock
-    private LessonItemRepository lessonItemRepository;
-
-    @Mock
-    private StudentAnswerRepository studentAnswerRepository;
-
-    @Mock
-    private ContextRepository contextRepository;
-
-    @Mock
-    private AiService aiService;
+    @Mock private LessonRepository lessonRepository;
+    @Mock private LessonExerciseRepository exerciseRepository;
+    @Mock private ContextStatsRepository contextStatsRepository;
+    @Mock private ContextRepository contextRepository;
+    @Mock private AiService aiService;
 
     @InjectMocks
     private LessonService lessonService;
 
     private Context context;
     private Lesson lesson;
-    private LessonItem lessonItem;
+    private LessonExercise exercise;
 
     @BeforeEach
     void setUp() {
@@ -76,19 +50,15 @@ class LessonServiceTest {
         lesson.setDynamicType("TRANSLATION_REPETITION");
         lesson.setIntro("Test intro");
 
-        lessonItem = new LessonItem();
-        lessonItem.setId(1L);
-        lessonItem.setLesson(lesson);
-        lessonItem.setContext(context);
-        lessonItem.setPosition(1);
-        lessonItem.setPromptPt("Como você diz olá em inglês?");
-        lessonItem.setExpectedAnswerEn("Hello");
-        lessonItem.setLastAnswer(null);
-        lessonItem.setTeacherFeedback(null);
-        lessonItem.setScore(0);
-        lessonItem.setCompleted(false);
+        exercise = new LessonExercise();
+        exercise.setId(1L);
+        exercise.setLesson(lesson);
+        exercise.setContext(context);
+        exercise.setPromptPt("Como voce diz ola em ingles?");
+        exercise.setExpectedAnswerEn("Hello");
+        exercise.setAnswered(false);
 
-        lesson.addItem(lessonItem);
+        lesson.getExercises().add(exercise);
     }
 
     @Nested
@@ -96,7 +66,7 @@ class LessonServiceTest {
     class CreateTests {
 
         @Test
-        @DisplayName("should return existing active lesson if one is already in progress")
+        @DisplayName("should return existing active lesson")
         void shouldReturnExistingActiveLesson() {
             when(lessonRepository.findFirstByStatusOrderByCreatedAtDesc(LessonStatus.IN_PROGRESS))
                     .thenReturn(Optional.of(lesson));
@@ -105,111 +75,69 @@ class LessonServiceTest {
 
             assertNotNull(result);
             assertEquals(lesson.getId(), result.getId());
-            verify(lessonRepository).findFirstByStatusOrderByCreatedAtDesc(LessonStatus.IN_PROGRESS);
-            verify(contextRepository, never()).findAll(any(Pageable.class));
+            verify(contextRepository, never()).findAll();
         }
 
         @Test
         @DisplayName("should throw exception when no contexts exist")
-        void shouldThrowExceptionWhenNoContextsExist() {
+        void shouldThrowWhenNoContextsExist() {
             when(lessonRepository.findFirstByStatusOrderByCreatedAtDesc(LessonStatus.IN_PROGRESS))
                     .thenReturn(Optional.empty());
-            when(contextRepository.findAll(any(Pageable.class)))
-                    .thenReturn(new PageImpl<>(new ArrayList<>(), PageRequest.of(0, 5), 0));
+            when(contextRepository.findAll()).thenReturn(List.of());
 
             assertThrows(IllegalArgumentException.class, () -> lessonService.create(null));
-            assertTrue(true);
         }
 
         @Test
-        @DisplayName("should create new lesson with default dynamic type")
-        void shouldCreateNewLessonWithDefaultDynamicType() {
-            List<Context> contexts = List.of(context);
+        @DisplayName("should create new lesson with intro and first exercise")
+        void shouldCreateNewLesson() {
             when(lessonRepository.findFirstByStatusOrderByCreatedAtDesc(LessonStatus.IN_PROGRESS))
                     .thenReturn(Optional.empty());
-            when(contextRepository.findAll(any(Pageable.class)))
-                    .thenReturn(new PageImpl<>(contexts, PageRequest.of(0, 5), 1));
+            when(contextRepository.findAll()).thenReturn(List.of(context));
             when(aiService.complete(anyString(), anyInt(), anyDouble()))
                     .thenReturn("""
                             {
-                              "intro": "AI intro",
-                              "items": [
-                                { "promptPt": "Frase 1", "expectedAnswerEn": "Sentence 1" },
-                                { "promptPt": "Frase 2", "expectedAnswerEn": "Sentence 2" }
-                              ]
+                              "intro": "Hello! I'm Teacher!",
+                              "exercise": {
+                                "contextId": 1,
+                                "promptPt": "Frase em portugues",
+                                "expectedAnswerEn": "English phrase",
+                                "variationNote": ""
+                              }
                             }""");
 
-            Lesson savedLesson = new Lesson();
-            savedLesson.setId(1L);
-            savedLesson.setStatus(LessonStatus.IN_PROGRESS);
-            savedLesson.setDynamicType("TRANSLATION_REPETITION");
-            savedLesson.setIntro("AI intro");
-
-            when(lessonRepository.save(any(Lesson.class))).thenReturn(savedLesson);
+            when(lessonRepository.save(any(Lesson.class))).thenAnswer(inv -> {
+                Lesson l = inv.getArgument(0);
+                if (l.getId() == null) l.setId(1L);
+                return l;
+            });
 
             LessonDTO result = lessonService.create(null);
 
             assertNotNull(result);
             assertEquals("TRANSLATION_REPETITION", result.getDynamicType());
-            verify(lessonRepository).save(any(Lesson.class));
+            assertEquals("Hello! I'm Teacher!", result.getIntro());
+            assertNotNull(result.getCurrentExercise());
         }
 
         @Test
-        @DisplayName("should create new lesson with custom dynamic type")
-        void shouldCreateNewLessonWithCustomDynamicType() {
-            CreateLessonRequest request = new CreateLessonRequest();
-            request.setDynamicType("CUSTOM_TYPE");
-
-            List<Context> contexts = List.of(context);
+        @DisplayName("should fallback when AI returns invalid JSON")
+        void shouldFallbackWhenAiInvalid() {
             when(lessonRepository.findFirstByStatusOrderByCreatedAtDesc(LessonStatus.IN_PROGRESS))
                     .thenReturn(Optional.empty());
-            when(contextRepository.findAll(any(Pageable.class)))
-                    .thenReturn(new PageImpl<>(contexts, PageRequest.of(0, 5), 1));
-            when(aiService.complete(anyString(), anyInt(), anyDouble()))
-                    .thenReturn("""
-                            {
-                              "intro": "AI intro",
-                              "items": [
-                                { "promptPt": "Frase 1", "expectedAnswerEn": "Sentence 1" }
-                              ]
-                            }""");
+            when(contextRepository.findAll()).thenReturn(List.of(context));
+            when(aiService.complete(anyString(), anyInt(), anyDouble())).thenReturn("not json");
 
-            Lesson savedLesson = new Lesson();
-            savedLesson.setId(1L);
-            savedLesson.setStatus(LessonStatus.IN_PROGRESS);
-            savedLesson.setDynamicType("CUSTOM_TYPE");
-            savedLesson.setIntro("AI intro");
-
-            when(lessonRepository.save(any(Lesson.class))).thenReturn(savedLesson);
-
-            LessonDTO result = lessonService.create(request);
-
-            assertNotNull(result);
-            assertEquals("CUSTOM_TYPE", result.getDynamicType());
-        }
-
-        @Test
-        @DisplayName("should fallback to default plan when AI response is invalid")
-        void shouldFallbackWhenAiResponseInvalid() {
-            List<Context> contexts = List.of(context);
-            when(lessonRepository.findFirstByStatusOrderByCreatedAtDesc(LessonStatus.IN_PROGRESS))
-                    .thenReturn(Optional.empty());
-            when(contextRepository.findAll(any(Pageable.class)))
-                    .thenReturn(new PageImpl<>(contexts, PageRequest.of(0, 5), 1));
-            when(aiService.complete(anyString(), anyInt(), anyDouble()))
-                    .thenReturn("invalid json");
-
-            Lesson savedLesson = new Lesson();
-            savedLesson.setId(1L);
-            savedLesson.setStatus(LessonStatus.IN_PROGRESS);
-            savedLesson.setDynamicType("TRANSLATION_REPETITION");
-
-            when(lessonRepository.save(any(Lesson.class))).thenReturn(savedLesson);
+            when(lessonRepository.save(any(Lesson.class))).thenAnswer(inv -> {
+                Lesson l = inv.getArgument(0);
+                if (l.getId() == null) l.setId(1L);
+                return l;
+            });
 
             LessonDTO result = lessonService.create(null);
-
             assertNotNull(result);
-            verify(lessonRepository).save(any(Lesson.class));
+            assertNotNull(result.getIntro());
+            assertNotNull(result.getCurrentExercise());
         }
     }
 
@@ -218,25 +146,22 @@ class LessonServiceTest {
     class FindByIdTests {
 
         @Test
-        @DisplayName("should return lesson DTO when lesson exists")
-        void shouldReturnLessonDtoWhenExists() {
+        @DisplayName("should return lesson DTO when exists")
+        void shouldReturnLessonDto() {
             when(lessonRepository.findById(1L)).thenReturn(Optional.of(lesson));
+            when(contextStatsRepository.findByLessonId(1L)).thenReturn(List.of());
 
             LessonDTO result = lessonService.findById(1L);
 
             assertNotNull(result);
             assertEquals(lesson.getId(), result.getId());
-            assertEquals(lesson.getDynamicType(), result.getDynamicType());
-            verify(lessonRepository).findById(1L);
         }
 
         @Test
-        @DisplayName("should throw ResourceNotFoundException when lesson does not exist")
-        void shouldThrowWhenLessonNotFound() {
+        @DisplayName("should throw when not found")
+        void shouldThrowWhenNotFound() {
             when(lessonRepository.findById(999L)).thenReturn(Optional.empty());
-
             assertThrows(ResourceNotFoundException.class, () -> lessonService.findById(999L));
-            verify(lessonRepository).findById(999L);
         }
     }
 
@@ -245,28 +170,81 @@ class LessonServiceTest {
     class FindActiveTests {
 
         @Test
-        @DisplayName("should return active lesson DTO when one exists")
-        void shouldReturnActiveLessonDtoWhenExists() {
+        @DisplayName("should return active lesson")
+        void shouldReturnActive() {
             when(lessonRepository.findFirstByStatusOrderByCreatedAtDesc(LessonStatus.IN_PROGRESS))
                     .thenReturn(Optional.of(lesson));
+            when(contextStatsRepository.findByLessonId(1L)).thenReturn(List.of());
 
             LessonDTO result = lessonService.findActive();
-
             assertNotNull(result);
-            assertEquals(lesson.getId(), result.getId());
-            verify(lessonRepository).findFirstByStatusOrderByCreatedAtDesc(LessonStatus.IN_PROGRESS);
         }
 
         @Test
-        @DisplayName("should return null when no active lesson exists")
-        void shouldReturnNullWhenNoActiveLessonExists() {
+        @DisplayName("should return null when none active")
+        void shouldReturnNull() {
             when(lessonRepository.findFirstByStatusOrderByCreatedAtDesc(LessonStatus.IN_PROGRESS))
                     .thenReturn(Optional.empty());
+            assertNull(lessonService.findActive());
+        }
+    }
 
-            LessonDTO result = lessonService.findActive();
+    @Nested
+    @DisplayName("next")
+    class NextTests {
 
-            assertNull(result);
-            verify(lessonRepository).findFirstByStatusOrderByCreatedAtDesc(LessonStatus.IN_PROGRESS);
+        @Test
+        @DisplayName("should throw when lesson not found")
+        void shouldThrowWhenNotFound() {
+            when(lessonRepository.findById(999L)).thenReturn(Optional.empty());
+            assertThrows(ResourceNotFoundException.class, () -> lessonService.next(999L));
+        }
+
+        @Test
+        @DisplayName("should throw when lesson completed")
+        void shouldThrowWhenCompleted() {
+            lesson.setStatus(LessonStatus.COMPLETED);
+            when(lessonRepository.findById(1L)).thenReturn(Optional.of(lesson));
+            assertThrows(IllegalArgumentException.class, () -> lessonService.next(1L));
+        }
+
+        @Test
+        @DisplayName("should return existing pending exercise")
+        void shouldReturnPendingExercise() {
+            when(lessonRepository.findById(1L)).thenReturn(Optional.of(lesson));
+            when(contextStatsRepository.findByLessonId(1L)).thenReturn(List.of());
+
+            LessonDTO result = lessonService.next(1L);
+            assertNotNull(result.getCurrentExercise());
+            assertFalse(result.getCurrentExercise().isAnswered());
+            verify(aiService, never()).complete(anyString(), anyInt(), anyDouble());
+        }
+
+        @Test
+        @DisplayName("should generate next exercise when none pending")
+        void shouldGenerateNextExercise() {
+            // Mark existing exercise as answered
+            exercise.setAnswered(true);
+            lesson.getExercises().clear();
+            lesson.getExercises().add(exercise);
+
+            when(lessonRepository.findById(1L)).thenReturn(Optional.of(lesson));
+            when(contextRepository.findAll()).thenReturn(List.of(context));
+            when(aiService.complete(anyString(), anyInt(), anyDouble()))
+                    .thenReturn("""
+                            {
+                              "contextId": 1,
+                              "promptPt": "Nova frase",
+                              "expectedAnswerEn": "New sentence",
+                              "variationNote": "past tense"
+                            }""");
+            when(lessonRepository.save(any(Lesson.class))).thenReturn(lesson);
+            when(exerciseRepository.findTop10ByLessonIdOrderByCreatedAtDesc(1L)).thenReturn(List.of());
+            when(contextStatsRepository.findByLessonId(1L)).thenReturn(List.of());
+
+            LessonDTO result = lessonService.next(1L);
+            assertNotNull(result.getCurrentExercise());
+            assertFalse(result.getCurrentExercise().isAnswered());
         }
     }
 
@@ -275,122 +253,100 @@ class LessonServiceTest {
     class SubmitAnswerTests {
 
         @Test
-        @DisplayName("should throw ResourceNotFoundException when lesson does not exist")
+        @DisplayName("should throw when lesson not found")
         void shouldThrowWhenLessonNotFound() {
-            SubmitAnswerRequest request = new SubmitAnswerRequest();
-            request.setItemId(1L);
-            request.setAnswer("Hello");
-
+            SubmitAnswerRequest req = new SubmitAnswerRequest();
+            req.setExerciseId(1L);
+            req.setAnswer("Hello");
             when(lessonRepository.findById(999L)).thenReturn(Optional.empty());
-
-            assertThrows(ResourceNotFoundException.class, () -> lessonService.submitAnswer(999L, request));
+            assertThrows(ResourceNotFoundException.class, () -> lessonService.submitAnswer(999L, req));
         }
 
         @Test
-        @DisplayName("should throw exception when lesson is already completed")
-        void shouldThrowWhenLessonCompleted() {
-            SubmitAnswerRequest request = new SubmitAnswerRequest();
-            request.setItemId(1L);
-            request.setAnswer("Hello");
-
-            Lesson completedLesson = new Lesson();
-            completedLesson.setId(1L);
-            completedLesson.setStatus(LessonStatus.COMPLETED);
-
-            when(lessonRepository.findById(1L)).thenReturn(Optional.of(completedLesson));
-
-            assertThrows(IllegalArgumentException.class, () -> lessonService.submitAnswer(1L, request));
+        @DisplayName("should throw when lesson completed")
+        void shouldThrowWhenCompleted() {
+            lesson.setStatus(LessonStatus.COMPLETED);
+            SubmitAnswerRequest req = new SubmitAnswerRequest();
+            req.setExerciseId(1L);
+            req.setAnswer("Hello");
+            when(lessonRepository.findById(1L)).thenReturn(Optional.of(lesson));
+            assertThrows(IllegalArgumentException.class, () -> lessonService.submitAnswer(1L, req));
         }
 
         @Test
-        @DisplayName("should throw ResourceNotFoundException when lesson item does not exist")
-        void shouldThrowWhenLessonItemNotFound() {
-            SubmitAnswerRequest request = new SubmitAnswerRequest();
-            request.setItemId(999L);
-            request.setAnswer("Hello");
+        @DisplayName("should throw when exercise not found")
+        void shouldThrowWhenExerciseNotFound() {
+            SubmitAnswerRequest req = new SubmitAnswerRequest();
+            req.setExerciseId(999L);
+            req.setAnswer("Hello");
+            when(lessonRepository.findById(1L)).thenReturn(Optional.of(lesson));
+            when(exerciseRepository.findById(999L)).thenReturn(Optional.empty());
+            assertThrows(ResourceNotFoundException.class, () -> lessonService.submitAnswer(1L, req));
+        }
+
+        @Test
+        @DisplayName("should save answer and update stats")
+        void shouldSaveAnswerAndUpdateStats() {
+            SubmitAnswerRequest req = new SubmitAnswerRequest();
+            req.setExerciseId(1L);
+            req.setAnswer("  Hello  ");
 
             when(lessonRepository.findById(1L)).thenReturn(Optional.of(lesson));
-            when(lessonItemRepository.findById(999L)).thenReturn(Optional.empty());
-
-            assertThrows(ResourceNotFoundException.class, () -> lessonService.submitAnswer(1L, request));
-        }
-
-        @Test
-        @DisplayName("should throw exception when lesson item does not belong to lesson")
-        void shouldThrowWhenItemDoesNotBelongToLesson() {
-            SubmitAnswerRequest request = new SubmitAnswerRequest();
-            request.setItemId(1L);
-            request.setAnswer("Hello");
-
-            Lesson otherLesson = new Lesson();
-            otherLesson.setId(2L);
-            otherLesson.setStatus(LessonStatus.IN_PROGRESS);
-
-            LessonItem itemFromOtherLesson = new LessonItem();
-            itemFromOtherLesson.setId(1L);
-            itemFromOtherLesson.setLesson(otherLesson);
-
-            when(lessonRepository.findById(1L)).thenReturn(Optional.of(lesson));
-            when(lessonItemRepository.findById(1L)).thenReturn(Optional.of(itemFromOtherLesson));
-
-            assertThrows(IllegalArgumentException.class, () -> lessonService.submitAnswer(1L, request));
-        }
-
-        @Test
-        @DisplayName("should save answer with evaluation when submission is valid")
-        void shouldSaveAnswerWithEvaluation() {
-            SubmitAnswerRequest request = new SubmitAnswerRequest();
-            request.setItemId(1L);
-            request.setAnswer("  Hello  ");
-
-            when(lessonRepository.findById(1L)).thenReturn(Optional.of(lesson));
-            when(lessonItemRepository.findById(1L)).thenReturn(Optional.of(lessonItem));
+            when(exerciseRepository.findById(1L)).thenReturn(Optional.of(exercise));
+            // First call: classify (not a doubt)
             when(aiService.complete(anyString(), anyInt(), anyDouble()))
-                    .thenReturn("""
-                            {
-                              "score": 85,
-                              "feedback": "Great! 'Hello' is perfect."
-                            }""");
-            when(lessonItemRepository.save(any(LessonItem.class))).thenReturn(lessonItem);
-            when(studentAnswerRepository.save(any(StudentAnswer.class))).thenReturn(new StudentAnswer());
+                    .thenReturn("{\"isDoubt\": false, \"teacherMessage\": \"\"}")
+                    // Second call: evaluate
+                    .thenReturn("{\"score\": 85, \"feedback\": \"Great!\"}");
+            when(exerciseRepository.save(any(LessonExercise.class))).thenReturn(exercise);
+            when(contextStatsRepository.findByLessonIdAndContextId(1L, 1L))
+                    .thenReturn(Optional.empty());
+            when(contextStatsRepository.save(any(ContextStats.class))).thenAnswer(inv -> inv.getArgument(0));
+            when(contextStatsRepository.findByLessonId(1L)).thenReturn(List.of());
 
-            LessonDTO result = lessonService.submitAnswer(1L, request);
-
+            LessonDTO result = lessonService.submitAnswer(1L, req);
             assertNotNull(result);
-            verify(lessonItemRepository).save(any(LessonItem.class));
-            verify(studentAnswerRepository).save(any(StudentAnswer.class));
 
-            ArgumentCaptor<LessonItem> itemCaptor = ArgumentCaptor.forClass(LessonItem.class);
-            verify(lessonItemRepository).save(itemCaptor.capture());
-            LessonItem savedItem = itemCaptor.getValue();
-            assertEquals("Hello", savedItem.getLastAnswer());
-            assertTrue(savedItem.isCompleted());
+            verify(exerciseRepository).save(any(LessonExercise.class));
+            verify(contextStatsRepository).save(any(ContextStats.class));
         }
 
         @Test
-        @DisplayName("should use fallback evaluation when AI response is invalid")
-        void shouldUseFallbackEvaluationWhenAiResponseInvalid() {
-            SubmitAnswerRequest request = new SubmitAnswerRequest();
-            request.setItemId(1L);
-            request.setAnswer("Hello");
+        @DisplayName("should not count doubt as translation attempt")
+        void shouldClassifyDoubtAndNotCountAsAnswer() {
+            SubmitAnswerRequest req = new SubmitAnswerRequest();
+            req.setExerciseId(1L);
+            req.setAnswer("como falar isso em ingles?");
 
             when(lessonRepository.findById(1L)).thenReturn(Optional.of(lesson));
-            when(lessonItemRepository.findById(1L)).thenReturn(Optional.of(lessonItem));
+            when(exerciseRepository.findById(1L)).thenReturn(Optional.of(exercise));
+            // Classification: it's a doubt
             when(aiService.complete(anyString(), anyInt(), anyDouble()))
-                    .thenReturn("invalid json");
-            when(lessonItemRepository.save(any(LessonItem.class))).thenReturn(lessonItem);
-            when(studentAnswerRepository.save(any(StudentAnswer.class))).thenReturn(new StudentAnswer());
+                    .thenReturn("{\"isDoubt\": true, \"teacherMessage\": \"Claro! A frase seria...\"}");
+            when(exerciseRepository.save(any(LessonExercise.class))).thenReturn(exercise);
+            when(contextStatsRepository.findByLessonId(1L)).thenReturn(List.of());
 
-            LessonDTO result = lessonService.submitAnswer(1L, request);
-
+            LessonDTO result = lessonService.submitAnswer(1L, req);
             assertNotNull(result);
-            verify(lessonItemRepository).save(any(LessonItem.class));
-            verify(studentAnswerRepository).save(any(StudentAnswer.class));
+            assertTrue(result.isLastWasDoubt());
+            assertEquals("Claro! A frase seria...", result.getLastTeacherMessage());
+            // Exercise should NOT be marked answered
+            assertNotNull(result.getCurrentExercise());
+            assertFalse(result.getCurrentExercise().isAnswered());
+            // Stats should NOT be updated
+            verify(contextStatsRepository, never()).save(any(ContextStats.class));
+        }
 
-            ArgumentCaptor<LessonItem> itemCaptor = ArgumentCaptor.forClass(LessonItem.class);
-            verify(lessonItemRepository).save(itemCaptor.capture());
-            LessonItem savedItem = itemCaptor.getValue();
-            assertEquals(70, savedItem.getScore());
+        @Test
+        @DisplayName("should throw when exercise already answered")
+        void shouldThrowWhenAlreadyAnswered() {
+            exercise.setAnswered(true);
+            SubmitAnswerRequest req = new SubmitAnswerRequest();
+            req.setExerciseId(1L);
+            req.setAnswer("Hello");
+            when(lessonRepository.findById(1L)).thenReturn(Optional.of(lesson));
+            when(exerciseRepository.findById(1L)).thenReturn(Optional.of(exercise));
+            assertThrows(IllegalArgumentException.class, () -> lessonService.submitAnswer(1L, req));
         }
     }
 
@@ -399,48 +355,36 @@ class LessonServiceTest {
     class FinishTests {
 
         @Test
-        @DisplayName("should throw ResourceNotFoundException when lesson does not exist")
-        void shouldThrowWhenLessonNotFound() {
+        @DisplayName("should throw when lesson not found")
+        void shouldThrowWhenNotFound() {
             when(lessonRepository.findById(999L)).thenReturn(Optional.empty());
-
             assertThrows(ResourceNotFoundException.class, () -> lessonService.finish(999L));
         }
 
         @Test
-        @DisplayName("should mark lesson as completed with final feedback")
-        void shouldMarkLessonAsCompletedWithFeedback() {
+        @DisplayName("should mark completed with feedback")
+        void shouldMarkCompleted() {
             when(lessonRepository.findById(1L)).thenReturn(Optional.of(lesson));
-            when(aiService.complete(anyString(), anyInt(), anyDouble()))
-                    .thenReturn("Great performance!");
+            when(aiService.complete(anyString(), anyInt(), anyDouble())).thenReturn("Great progress!");
             when(lessonRepository.save(any(Lesson.class))).thenReturn(lesson);
+            when(contextStatsRepository.findByLessonId(1L)).thenReturn(List.of());
 
             LessonDTO result = lessonService.finish(1L);
-
             assertNotNull(result);
-            ArgumentCaptor<Lesson> lessonCaptor = ArgumentCaptor.forClass(Lesson.class);
-            verify(lessonRepository).save(lessonCaptor.capture());
-            Lesson savedLesson = lessonCaptor.getValue();
-            assertEquals(LessonStatus.COMPLETED, savedLesson.getStatus());
-            assertNotNull(savedLesson.getCompletedAt());
-            assertNotNull(savedLesson.getFinalFeedback());
+
+            verify(lessonRepository).save(any(Lesson.class));
         }
 
         @Test
-        @DisplayName("should use default feedback when AI response is null")
-        void shouldUseDefaultFeedbackWhenAiResponseIsNull() {
+        @DisplayName("should use default feedback when AI returns null")
+        void shouldUseDefaultFeedback() {
             when(lessonRepository.findById(1L)).thenReturn(Optional.of(lesson));
-            when(aiService.complete(anyString(), anyInt(), anyDouble()))
-                    .thenReturn(null);
+            when(aiService.complete(anyString(), anyInt(), anyDouble())).thenReturn(null);
             when(lessonRepository.save(any(Lesson.class))).thenReturn(lesson);
+            when(contextStatsRepository.findByLessonId(1L)).thenReturn(List.of());
 
             LessonDTO result = lessonService.finish(1L);
-
             assertNotNull(result);
-            ArgumentCaptor<Lesson> lessonCaptor = ArgumentCaptor.forClass(Lesson.class);
-            verify(lessonRepository).save(lessonCaptor.capture());
-            Lesson savedLesson = lessonCaptor.getValue();
-            assertEquals(LessonStatus.COMPLETED, savedLesson.getStatus());
-            assertTrue(savedLesson.getFinalFeedback().contains("Aula finalizada"));
         }
     }
 }

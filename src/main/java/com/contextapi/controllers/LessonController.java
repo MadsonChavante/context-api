@@ -49,6 +49,12 @@ public class LessonController {
         return ResponseEntity.ok(lessonService.submitAnswer(id, request));
     }
 
+    @PostMapping("/{id}/next")
+    public ResponseEntity<LessonDTO> next(@PathVariable Long id) {
+        log.debug("POST request to generate next exercise for lesson id: {}", id);
+        return ResponseEntity.ok(lessonService.next(id));
+    }
+
     @PostMapping("/{id}/finish")
     public ResponseEntity<LessonDTO> finish(@PathVariable Long id) {
         log.debug("POST request to finish lesson id: {}", id);

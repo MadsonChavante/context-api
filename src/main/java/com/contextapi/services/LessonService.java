@@ -1,30 +1,18 @@
 package com.contextapi.services;
 
-import com.contextapi.dtos.CreateLessonRequest;
-import com.contextapi.dtos.LessonDTO;
-import com.contextapi.dtos.LessonItemDTO;
-import com.contextapi.dtos.SubmitAnswerRequest;
-import com.contextapi.entities.Context;
-import com.contextapi.entities.Lesson;
-import com.contextapi.entities.LessonItem;
-import com.contextapi.entities.StudentAnswer;
+import com.contextapi.dtos.*;
+import com.contextapi.entities.*;
 import com.contextapi.enums.LessonStatus;
 import com.contextapi.exceptions.ResourceNotFoundException;
-import com.contextapi.repositories.ContextRepository;
-import com.contextapi.repositories.LessonItemRepository;
-import com.contextapi.repositories.LessonRepository;
-import com.contextapi.repositories.StudentAnswerRepository;
+import com.contextapi.repositories.*;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.data.domain.PageRequest;
-import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
-import java.util.ArrayList;
-import java.util.List;
+import java.util.*;
 
 @Slf4j
 @Service
@@ -34,70 +22,232 @@ public class LessonService {
     private static final String DEFAULT_DYNAMIC = "TRANSLATION_REPETITION";
 
     private final LessonRepository lessonRepository;
-    private final LessonItemRepository lessonItemRepository;
-    private final StudentAnswerRepository studentAnswerRepository;
+    private final LessonExerciseRepository exerciseRepository;
+    private final ContextStatsRepository contextStatsRepository;
     private final ContextRepository contextRepository;
     private final AiService aiService;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     public LessonService(
             LessonRepository lessonRepository,
-            LessonItemRepository lessonItemRepository,
-            StudentAnswerRepository studentAnswerRepository,
+            LessonExerciseRepository exerciseRepository,
+            ContextStatsRepository contextStatsRepository,
             ContextRepository contextRepository,
             AiService aiService) {
         this.lessonRepository = lessonRepository;
-        this.lessonItemRepository = lessonItemRepository;
-        this.studentAnswerRepository = studentAnswerRepository;
+        this.exerciseRepository = exerciseRepository;
+        this.contextStatsRepository = contextStatsRepository;
         this.contextRepository = contextRepository;
         this.aiService = aiService;
     }
 
+    // ════════════════════════════════════════════════════════════════
+    // CREATE — starts a continuous lesson with intro + first exercise
+    // ════════════════════════════════════════════════════════════════
+
     public LessonDTO create(CreateLessonRequest request) {
-        Lesson activeLesson = lessonRepository.findFirstByStatusOrderByCreatedAtDesc(LessonStatus.IN_PROGRESS)
+        // Reuse active lesson if any
+        Lesson activeLesson = lessonRepository
+                .findFirstByStatusOrderByCreatedAtDesc(LessonStatus.IN_PROGRESS)
                 .orElse(null);
         if (activeLesson != null) {
             return mapToDTO(activeLesson);
         }
 
-        String dynamicType = request != null && request.getDynamicType() != null && !request.getDynamicType().isBlank()
+        String dynamicType = request != null && request.getDynamicType() != null
+                && !request.getDynamicType().isBlank()
                 ? request.getDynamicType()
                 : DEFAULT_DYNAMIC;
 
-        List<Context> contexts = contextRepository
-                .findAll(PageRequest.of(0, 5, Sort.by(Sort.Direction.DESC, "id")))
-                .getContent();
-
+        List<Context> contexts = contextRepository.findAll();
         if (contexts.isEmpty()) {
             throw new IllegalArgumentException("Create at least one context before starting a lesson");
         }
 
-        LessonPlan plan = planLesson(contexts, dynamicType);
-
+        // Save lesson first
         Lesson lesson = new Lesson();
         lesson.setDynamicType(dynamicType);
-        lesson.setIntro(plan.intro());
+        lesson = lessonRepository.save(lesson);
 
-        for (int i = 0; i < plan.items().size(); i++) {
-            PlannedItem plannedItem = plan.items().get(i);
-            Context context = contexts.get(Math.min(i, contexts.size() - 1));
+        // Generate intro + first exercise together via AI
+        String introJson = aiService.complete(buildIntroAndFirstExercisePrompt(contexts, dynamicType), 800, 0.6);
+        IntroAndExerciseResult parsed = parseIntroAndFirstExercise(introJson);
 
-            LessonItem item = new LessonItem();
-            item.setContext(context);
-            item.setPosition(i + 1);
-            item.setPromptPt(plannedItem.promptPt());
-            item.setExpectedAnswerEn(plannedItem.expectedAnswerEn());
-            lesson.addItem(item);
+        String intro = parsed != null ? parsed.intro() : generateFallbackIntro(contexts);
+        lesson.setIntro(intro);
+        lesson = lessonRepository.save(lesson);
+
+        // Create first exercise
+        Context firstContext = contexts.get(0);
+        if (parsed != null && parsed.exercise() != null && parsed.exercise().contextId() > 0) {
+            firstContext = findContextById(contexts, parsed.exercise().contextId());
         }
+
+        LessonExercise firstExercise = createExerciseEntity(lesson, firstContext, parsed);
+        lesson.addExercise(firstExercise);
+
+        // Initialize preferred order
+        lesson.setPreferredContextIds(buildPreferredOrderStr(contexts));
+        lesson = lessonRepository.save(lesson);
+
+        return mapToDTO(lesson);
+    }
+
+    // ════════════════════════════════════════════════════════════════
+    // NEXT — generate the next exercise
+    // ════════════════════════════════════════════════════════════════
+
+    public LessonDTO next(Long lessonId) {
+        Lesson lesson = lessonRepository.findById(lessonId)
+                .orElseThrow(() -> new ResourceNotFoundException(
+                        String.format("Lesson not found with id: %d", lessonId)));
+
+        if (lesson.getStatus() == LessonStatus.COMPLETED) {
+            throw new IllegalArgumentException("This lesson is already completed");
+        }
+
+        // Check if there's already a pending (unanswered) exercise
+        Optional<LessonExercise> pending = lesson.getExercises().stream()
+                .filter(e -> !e.isAnswered())
+                .findFirst();
+        if (pending.isPresent()) {
+            return mapToDTO(lesson);
+        }
+
+        List<Context> allContexts = contextRepository.findAll();
+        if (allContexts.isEmpty()) {
+            throw new IllegalArgumentException("No contexts available");
+        }
+
+        // AI chooses context + generates exercise
+        String contextSummary = buildContextSummary(lesson, allContexts);
+        String recentPrompts = buildRecentPromptsSummary(lesson);
+
+        String exerciseJson = aiService.complete(
+                buildNextExercisePrompt(contextSummary, recentPrompts, lesson.getDynamicType()),
+                600, 0.5);
+
+        NextExerciseResult result = parseNextExercise(exerciseJson);
+
+        // Pick context: AI choice or smart fallback
+        Context chosenContext = allContexts.get(0);
+        if (result != null && result.contextId() > 0) {
+            Long cid = result.contextId();
+            chosenContext = allContexts.stream()
+                    .filter(c -> c.getId().equals(cid))
+                    .findFirst()
+                    .orElse(chosenContext);
+        } else {
+            chosenContext = pickWeakestContext(lesson, allContexts);
+        }
+
+        LessonExercise exercise = new LessonExercise();
+        exercise.setContext(chosenContext);
+        exercise.setPromptPt(result != null ? result.promptPt() : buildFallbackPrompt(chosenContext));
+        exercise.setExpectedAnswerEn(result != null ? result.expectedAnswerEn() : chosenContext.getContent());
+        exercise.setVariationNote(result != null ? result.variationNote() : "");
+        lesson.addExercise(exercise);
+
+        // Rotate: move just-used context to end of priority list
+        updatePreferredOrder(lesson, chosenContext.getId(), allContexts);
+
+        lessonRepository.save(lesson);
+        return mapToDTO(lesson);
+    }
+
+    // ════════════════════════════════════════════════════════════════
+    // SUBMIT ANSWER
+    // ════════════════════════════════════════════════════════════════
+
+    public LessonDTO submitAnswer(Long lessonId, SubmitAnswerRequest request) {
+        Lesson lesson = lessonRepository.findById(lessonId)
+                .orElseThrow(() -> new ResourceNotFoundException(
+                        String.format("Lesson not found with id: %d", lessonId)));
+
+        if (lesson.getStatus() == LessonStatus.COMPLETED) {
+            throw new IllegalArgumentException("This lesson is already completed");
+        }
+
+        LessonExercise exercise = exerciseRepository.findById(request.getExerciseId())
+                .orElseThrow(() -> new ResourceNotFoundException(
+                        String.format("Exercise not found with id: %d", request.getExerciseId())));
+
+        if (!exercise.getLesson().getId().equals(lessonId)) {
+            throw new IllegalArgumentException("Exercise does not belong to this lesson");
+        }
+
+        String studentInput = request.getAnswer().trim();
+
+        // First, ask AI to classify: is the student answering the translation, or asking a doubt?
+        ClassificationResult classification = classifyStudentInput(exercise, studentInput);
+        String teacherMessage;
+        boolean wasDoubt;
+
+        if (classification.isDoubt()) {
+            // Student asked a question — answer it but DON'T count as translation attempt
+            teacherMessage = classification.teacherMessage();
+            exercise.setStudentAnswer(studentInput);
+            // Keep exercise unanswered so student can still translate it
+            exerciseRepository.save(exercise);
+            wasDoubt = true;
+        } else {
+            // Student attempted the translation — evaluate normally
+            if (exercise.isAnswered()) {
+                throw new IllegalArgumentException("This exercise has already been answered");
+            }
+            TeacherEvaluation eval = evaluateAnswer(exercise, studentInput);
+            exercise.setStudentAnswer(studentInput);
+            exercise.setFeedback(eval.feedback());
+            exercise.setScore(eval.score());
+            exercise.setAnswered(true);
+            exerciseRepository.save(exercise);
+
+            // Update context stats
+            ContextStats stats = contextStatsRepository
+                    .findByLessonIdAndContextId(lessonId, exercise.getContext().getId())
+                    .orElseGet(() -> {
+                        ContextStats s = new ContextStats();
+                        s.setLesson(lesson);
+                        s.setContext(exercise.getContext());
+                        return s;
+                    });
+            stats.addExercise(eval.score());
+            contextStatsRepository.save(stats);
+
+            teacherMessage = eval.feedback();
+            wasDoubt = false;
+        }
+
+        lessonRepository.save(lesson);
+        return mapToDTO(lesson, teacherMessage, wasDoubt);
+    }
+
+    // ════════════════════════════════════════════════════════════════
+    // FINISH
+    // ════════════════════════════════════════════════════════════════
+
+    public LessonDTO finish(Long id) {
+        Lesson lesson = lessonRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException(
+                        String.format("Lesson not found with id: %d", id)));
+
+        lesson.setStatus(LessonStatus.COMPLETED);
+        lesson.setCompletedAt(LocalDateTime.now());
+        lesson.setFinalFeedback(buildFinalFeedback(lesson));
 
         return mapToDTO(lessonRepository.save(lesson));
     }
 
+    // ════════════════════════════════════════════════════════════════
+    // READ
+    // ════════════════════════════════════════════════════════════════
+
     @Transactional(readOnly = true)
     public LessonDTO findById(Long id) {
-        Lesson lesson = lessonRepository.findById(id)
-                .orElseThrow(() -> new ResourceNotFoundException(String.format("Lesson not found with id: %d", id)));
-        return mapToDTO(lesson);
+        return lessonRepository.findById(id)
+                .map(this::mapToDTO)
+                .orElseThrow(() -> new ResourceNotFoundException(
+                        String.format("Lesson not found with id: %d", id)));
     }
 
     @Transactional(readOnly = true)
@@ -107,183 +257,300 @@ public class LessonService {
                 .orElse(null);
     }
 
-    public LessonDTO submitAnswer(Long lessonId, SubmitAnswerRequest request) {
-        Lesson lesson = lessonRepository.findById(lessonId)
-                .orElseThrow(() -> new ResourceNotFoundException(String.format("Lesson not found with id: %d", lessonId)));
+    // ════════════════════════════════════════════════════════════════
+    // AI PROMPTS
+    // ════════════════════════════════════════════════════════════════
 
-        if (lesson.getStatus() == LessonStatus.COMPLETED) {
-            throw new IllegalArgumentException("This lesson is already completed");
-        }
+    private String buildIntroAndFirstExercisePrompt(List<Context> contexts, String dynamicType) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("""
+                Voce e um professor de ingles carismatico chamado Teacher, para um aluno brasileiro.
+                A aula e continua — o aluno pratica o quanto quiser.
+                Dinamica: voce fala uma frase em portugues e o aluno traduz para o ingles.
 
-        LessonItem item = lessonItemRepository.findById(request.getItemId())
-                .orElseThrow(() -> new ResourceNotFoundException(
-                        String.format("Lesson item not found with id: %d", request.getItemId())));
-
-        if (!item.getLesson().getId().equals(lessonId)) {
-            throw new IllegalArgumentException("Lesson item does not belong to this lesson");
-        }
-
-        TeacherEvaluation evaluation = evaluateAnswer(item, request.getAnswer());
-
-        item.setLastAnswer(request.getAnswer().trim());
-        item.setTeacherFeedback(evaluation.feedback());
-        item.setScore(evaluation.score());
-        item.setCompleted(true);
-        lessonItemRepository.save(item);
-
-        StudentAnswer answer = new StudentAnswer();
-        answer.setLessonItem(item);
-        answer.setAnswerText(request.getAnswer().trim());
-        answer.setFeedback(evaluation.feedback());
-        answer.setScore(evaluation.score());
-        studentAnswerRepository.save(answer);
-
-        return mapToDTO(lesson);
-    }
-
-    public LessonDTO finish(Long id) {
-        Lesson lesson = lessonRepository.findById(id)
-                .orElseThrow(() -> new ResourceNotFoundException(String.format("Lesson not found with id: %d", id)));
-
-        lesson.setStatus(LessonStatus.COMPLETED);
-        lesson.setCompletedAt(LocalDateTime.now());
-        lesson.setFinalFeedback(buildFinalFeedback(lesson));
-
-        return mapToDTO(lessonRepository.save(lesson));
-    }
-
-    private LessonPlan planLesson(List<Context> contexts, String dynamicType) {
-        StringBuilder contextsText = new StringBuilder();
+                Contextos do aluno:
+                """);
         for (int i = 0; i < contexts.size(); i++) {
-            contextsText.append(i + 1).append(". ").append(contexts.get(i).getContent()).append("\n");
+            sb.append(i + 1).append(". [id=").append(contexts.get(i).getId())
+                    .append("] ").append(contexts.get(i).getContent()).append("\n");
         }
+        sb.append("""
 
-        String prompt = """
-                Voce e um professor de ingles para um aluno brasileiro.
-                Crie uma aula curta usando a dinamica %s.
-                A aula deve pedir para o aluno traduzir frases do portugues para o ingles.
+                Responda SOMENTE com JSON valido:
+                {
+                  "intro": "saudacao calorosa de 2-3 frases em portugues. Se apresente como Teacher e explique: vou falar uma frase em portugues e voce traduz para o ingles. Vamos praticar o quanto quiser!",
+                  "exercise": {
+                    "contextId": <id do primeiro contexto>,
+                    "promptPt": "frase natural em portugues baseada no contexto",
+                    "expectedAnswerEn": "traducao natural em ingles",
+                    "variationNote": ""
+                  }
+                }
+                """);
+        return sb.toString();
+    }
 
-                Contextos reais do aluno:
+    private String buildNextExercisePrompt(String contextSummary, String recentPrompts, String dynamicType) {
+        return """
+                Voce e Teacher, professor de ingles em uma aula continua de traducao PT->EN.
+                Escolha o contexto que MAIS PRECISA de pratica (menor media ou nao praticado).
+                Crie uma frase NATURAL e UTIL. Use VARIACOES — mude palavras, tempo verbal, ou situacao.
+
+                Contextos com estatisticas (escolha o mais fraco):
                 %s
 
-                Responda somente com JSON valido neste formato:
+                Frases recentes (EVITE repetir):
+                %s
+
+                Responda SOMENTE com JSON valido:
                 {
-                  "intro": "explicacao curta em portugues",
-                  "items": [
-                    { "promptPt": "frase em portugues para o aluno traduzir", "expectedAnswerEn": "resposta natural em ingles" }
-                  ]
+                  "contextId": <id do contexto escolhido>,
+                  "promptPt": "frase em portugues variada do contexto",
+                  "expectedAnswerEn": "resposta natural em ingles",
+                  "variationNote": "breve explicacao da variacao (ex: mudei para passado)"
                 }
-
-                Gere de 3 a 5 itens. Use situacoes de trabalho ou dia a dia com base nos contextos.
-                """.formatted(dynamicType, contextsText);
-
-        String response = aiService.complete(prompt, 900, 0.4);
-        LessonPlan parsed = parseLessonPlan(response);
-        if (parsed != null && !parsed.items().isEmpty()) {
-            return parsed;
-        }
-
-        List<PlannedItem> fallbackItems = new ArrayList<>();
-        for (Context context : contexts) {
-            fallbackItems.add(new PlannedItem(
-                    "Como voce diria isso em ingles, de forma natural: " + context.getContent(),
-                    context.getContent()));
-        }
-        return new LessonPlan(
-                "Hoje vamos praticar frases em ingles baseadas nos contextos que voce salvou. Traduza cada frase para uma versao natural em ingles.",
-                fallbackItems);
+                """.formatted(contextSummary, recentPrompts);
     }
 
-    private TeacherEvaluation evaluateAnswer(LessonItem item, String answer) {
+    private String buildContextSummary(Lesson lesson, List<Context> allContexts) {
+        StringBuilder sb = new StringBuilder();
+        for (Context ctx : allContexts) {
+            ContextStats stats = contextStatsRepository
+                    .findByLessonIdAndContextId(lesson.getId(), ctx.getId())
+                    .orElse(null);
+            int count = stats != null ? stats.getTotalExercises() : 0;
+            double avg = stats != null ? stats.getAverageScore() : 0;
+            String level = count == 0 ? "NAO PRATICADO (prioridade maxima)" :
+                    avg >= 80 ? "dominado" : avg >= 50 ? "em progresso" : "PRECISA PRATICAR";
+            sb.append("- [id=").append(ctx.getId()).append("] ")
+                    .append(ctx.getContent())
+                    .append(" | ex: ").append(count)
+                    .append(" | media: ").append(String.format("%.0f", avg))
+                    .append(" | ").append(level).append("\n");
+        }
+        return sb.toString();
+    }
+
+    private String buildRecentPromptsSummary(Lesson lesson) {
+        List<LessonExercise> recent = exerciseRepository
+                .findTop10ByLessonIdOrderByCreatedAtDesc(lesson.getId());
+        if (recent.isEmpty()) return "(nenhuma ainda)";
+        StringBuilder sb = new StringBuilder();
+        for (LessonExercise ex : recent) {
+            sb.append("- \"").append(ex.getPromptPt()).append("\"\n");
+        }
+        return sb.toString();
+    }
+
+    // ════════════════════════════════════════════════════════════════
+    // CLASSIFY: doubt vs translation
+    // ════════════════════════════════════════════════════════════════
+
+    /**
+     * Asks the AI to determine if the student input is a translation attempt or a doubt/question.
+     * If it's a doubt, the AI also provides an answer.
+     */
+    private ClassificationResult classifyStudentInput(LessonExercise exercise, String studentInput) {
+        String prompt = """
+                Voce e Teacher, professor de ingles de um aluno brasileiro.
+                O aluno esta em uma aula de traducao PT->EN. A frase que voce pediu foi:
+
+                "%s"
+
+                O aluno digitou (ou falou): "%s"
+
+                Classifique a entrada do aluno:
+                - Se for uma duvida/pergunta (ex: "como falo X em ingles", "o que significa Y", "nao entendi", "pode repetir"),
+                  responda: { "isDoubt": true, "teacherMessage": "resposta curta e util em portugues" }
+                - Se for uma tentativa de traducao (mesmo que ruim), responda:
+                  { "isDoubt": false, "teacherMessage": "" }
+
+                Responda SOMENTE com JSON valido.
+                """.formatted(exercise.getPromptPt(), studentInput);
+
+        String response = aiService.complete(prompt, 300, 0.1);
+        ClassificationResult parsed = parseClassification(response);
+        if (parsed != null) return parsed;
+
+        // Fallback: heuristics
+        String lower = studentInput.toLowerCase().trim();
+        boolean looksLikeDoubt = lower.contains("como falo") || lower.contains("como falar")
+                || lower.contains("o que significa") || lower.contains("o que e")
+                || lower.contains("nao entendi") || lower.contains("pode repetir")
+                || lower.contains("qual a diferenca") || lower.contains("como se diz")
+                || lower.contains("?") || lower.contains("explique")
+                || lower.startsWith("duvida");
+
+        if (looksLikeDoubt) {
+            return new ClassificationResult(true,
+                    "Entendi sua duvida! "
+                            + exercise.getPromptPt() + " em ingles seria: \""
+                            + exercise.getExpectedAnswerEn() + "\". Alguma outra duvida?");
+        }
+        return new ClassificationResult(false, "");
+    }
+
+    private ClassificationResult parseClassification(String response) {
+        if (response == null || response.isBlank()) return null;
+        try {
+            JsonNode root = objectMapper.readTree(extractJson(response));
+            return new ClassificationResult(
+                    root.path("isDoubt").asBoolean(false),
+                    root.path("teacherMessage").asText(""));
+        } catch (Exception e) {
+            log.warn("Could not parse classification JSON: {}", e.getMessage());
+            return null;
+        }
+    }
+
+    // ════════════════════════════════════════════════════════════════
+    // EVALUATION
+    // ════════════════════════════════════════════════════════════════
+
+    private TeacherEvaluation evaluateAnswer(LessonExercise exercise, String answer) {
         String prompt = """
                 Voce e um professor de ingles objetivo e gentil.
-                Avalie a resposta do aluno para uma atividade de traducao portugues -> ingles.
+                Avalie a traducao PT->EN do aluno.
 
                 Frase em portugues: %s
-                Resposta esperada/natural: %s
+                Resposta natural esperada: %s
                 Resposta do aluno: %s
 
-                Responda somente com JSON valido:
-                { "score": 0, "feedback": "feedback em portugues com uma versao natural em ingles" }
+                Responda SOMENTE com JSON valido:
+                { "score": 0, "feedback": "feedback em portugues (max 2 frases). Inclua a versao natural em ingles." }
 
-                O score deve ser de 0 a 100.
-                """.formatted(item.getPromptPt(), item.getExpectedAnswerEn(), answer);
+                Score 0-100. Seja justo mas incentive.
+                """.formatted(exercise.getPromptPt(), exercise.getExpectedAnswerEn(), answer);
 
-        String response = aiService.complete(prompt, 500, 0.2);
+        String response = aiService.complete(prompt, 400, 0.2);
         TeacherEvaluation parsed = parseTeacherEvaluation(response);
-        if (parsed != null) {
-            return parsed;
-        }
-
-        return new TeacherEvaluation(
-                70,
-                "Boa tentativa. Uma forma natural seria: " + item.getExpectedAnswerEn());
+        if (parsed != null) return parsed;
+        return new TeacherEvaluation(70,
+                "Boa tentativa! Uma forma natural seria: " + exercise.getExpectedAnswerEn());
     }
 
     private String buildFinalFeedback(Lesson lesson) {
-        StringBuilder answers = new StringBuilder();
-        for (LessonItem item : lesson.getItems()) {
-            answers.append("- Contexto: ").append(item.getContext().getContent()).append("\n")
-                    .append("  Frase: ").append(item.getPromptPt()).append("\n")
-                    .append("  Resposta: ").append(item.getLastAnswer()).append("\n")
-                    .append("  Score: ").append(item.getScore()).append("\n");
+        List<ContextStats> stats = contextStatsRepository.findByLessonId(lesson.getId());
+        StringBuilder summary = new StringBuilder();
+        summary.append("Total de exercicios: ").append(lesson.getExerciseCount()).append("\n");
+        for (ContextStats s : stats) {
+            summary.append("- ").append(s.getContext().getContent())
+                    .append(" | ex: ").append(s.getTotalExercises())
+                    .append(" | media: ").append(String.format("%.0f", s.getAverageScore()))
+                    .append("\n");
         }
-
         String prompt = """
                 Voce e um avaliador pedagogico de ingles.
-                Analise a aula abaixo e diga, em portugues, quais contextos ainda valem praticar e quais parecem dominados.
-                Seja curto e pratico.
+                Resuma o progresso do aluno em 3-4 frases em portugues.
+                Destaque dominados e o que precisa praticar. Seja motivador.
 
                 %s
-                """.formatted(answers);
-
-        String response = aiService.complete(prompt, 500, 0.3);
+                """.formatted(summary);
+        String response = aiService.complete(prompt, 400, 0.3);
         if (response == null || response.isBlank()) {
-            return "Aula finalizada. Revise os itens com menor score e mantenha esses contextos ativos para uma proxima pratica.";
+            return "Aula finalizada! Continue praticando os contextos com menor media. Voce esta progredindo!";
         }
         return response.trim();
     }
 
-    private LessonPlan parseLessonPlan(String response) {
-        if (response == null || response.isBlank()) {
-            return null;
-        }
+    // ════════════════════════════════════════════════════════════════
+    // HELPERS
+    // ════════════════════════════════════════════════════════════════
 
+    private Context pickWeakestContext(Lesson lesson, List<Context> allContexts) {
+        return allContexts.stream()
+                .min(Comparator.comparingDouble(ctx -> {
+                    ContextStats s = contextStatsRepository
+                            .findByLessonIdAndContextId(lesson.getId(), ctx.getId())
+                            .orElse(null);
+                    return s != null ? s.getAverageScore() : 0;
+                }))
+                .orElse(allContexts.get(0));
+    }
+
+    private String buildPreferredOrderStr(List<Context> contexts) {
+        return contexts.stream().map(c -> String.valueOf(c.getId())).reduce((a, b) -> a + "," + b).orElse("");
+    }
+
+    private void updatePreferredOrder(Lesson lesson, Long justUsedId, List<Context> allContexts) {
+        List<Long> order = new ArrayList<>(allContexts.stream().map(Context::getId).toList());
+        order.remove(justUsedId);
+        order.add(justUsedId);
+        lesson.setPreferredContextIds(order.stream().map(String::valueOf).reduce((a, b) -> a + "," + b).orElse(""));
+    }
+
+    private Context findContextById(List<Context> contexts, long id) {
+        return contexts.stream().filter(c -> c.getId() == id).findFirst().orElse(contexts.get(0));
+    }
+
+    private LessonExercise createExerciseEntity(Lesson lesson, Context context, IntroAndExerciseResult parsed) {
+        LessonExercise exercise = new LessonExercise();
+        exercise.setContext(context);
+        if (parsed != null && parsed.exercise() != null) {
+            exercise.setPromptPt(parsed.exercise().promptPt());
+            exercise.setExpectedAnswerEn(parsed.exercise().expectedAnswerEn());
+            exercise.setVariationNote(parsed.exercise().variationNote());
+        } else {
+            exercise.setPromptPt(buildFallbackPrompt(context));
+            exercise.setExpectedAnswerEn(context.getContent());
+        }
+        return exercise;
+    }
+
+    private String buildFallbackPrompt(Context context) {
+        return "Como voce diria isso em ingles: \"" + context.getContent() + "\"";
+    }
+
+    private String generateFallbackIntro(List<Context> contexts) {
+        return "Hello! I'm Teacher, seu professor de ingles. " +
+                "Vou falar frases em portugues baseadas nos seus contextos e voce traduz para o ingles. " +
+                "Pratique o quanto quiser! Vamos comecar?";
+    }
+
+    // ════════════════════════════════════════════════════════════════
+    // JSON PARSING
+    // ════════════════════════════════════════════════════════════════
+
+    private IntroAndExerciseResult parseIntroAndFirstExercise(String response) {
+        if (response == null || response.isBlank()) return null;
         try {
             JsonNode root = objectMapper.readTree(extractJson(response));
-            String intro = root.path("intro").asText("Vamos praticar seus contextos em ingles.");
-            JsonNode itemsNode = root.path("items");
-            List<PlannedItem> items = new ArrayList<>();
-
-            if (itemsNode.isArray()) {
-                for (JsonNode itemNode : itemsNode) {
-                    String promptPt = itemNode.path("promptPt").asText();
-                    String expectedAnswerEn = itemNode.path("expectedAnswerEn").asText();
-                    if (!promptPt.isBlank() && !expectedAnswerEn.isBlank()) {
-                        items.add(new PlannedItem(promptPt, expectedAnswerEn));
-                    }
-                }
-            }
-
-            return new LessonPlan(intro, items);
+            String intro = root.path("intro").asText();
+            JsonNode ex = root.path("exercise");
+            if (intro.isBlank() || !ex.isObject()) return null;
+            return new IntroAndExerciseResult(intro, new ExercisePart(
+                    ex.path("contextId").asLong(0),
+                    ex.path("promptPt").asText(""),
+                    ex.path("expectedAnswerEn").asText(""),
+                    ex.path("variationNote").asText("")));
         } catch (Exception e) {
-            log.warn("Could not parse lesson plan JSON: {}", e.getMessage());
+            log.warn("Could not parse intro+exercise JSON: {}", e.getMessage());
+            return null;
+        }
+    }
+
+    private NextExerciseResult parseNextExercise(String response) {
+        if (response == null || response.isBlank()) return null;
+        try {
+            JsonNode root = objectMapper.readTree(extractJson(response));
+            return new NextExerciseResult(
+                    root.path("contextId").asLong(0),
+                    root.path("promptPt").asText(""),
+                    root.path("expectedAnswerEn").asText(""),
+                    root.path("variationNote").asText(""));
+        } catch (Exception e) {
+            log.warn("Could not parse exercise JSON: {}", e.getMessage());
             return null;
         }
     }
 
     private TeacherEvaluation parseTeacherEvaluation(String response) {
-        if (response == null || response.isBlank()) {
-            return null;
-        }
-
+        if (response == null || response.isBlank()) return null;
         try {
             JsonNode root = objectMapper.readTree(extractJson(response));
             int score = Math.max(0, Math.min(100, root.path("score").asInt(0)));
             String feedback = root.path("feedback").asText();
-            if (feedback.isBlank()) {
-                return null;
-            }
+            if (feedback.isBlank()) return null;
             return new TeacherEvaluation(score, feedback);
         } catch (Exception e) {
             log.warn("Could not parse teacher evaluation JSON: {}", e.getMessage());
@@ -300,9 +567,37 @@ public class LessonService {
         return response;
     }
 
+    // ════════════════════════════════════════════════════════════════
+    // DTO MAPPING
+    // ════════════════════════════════════════════════════════════════
+
     private LessonDTO mapToDTO(Lesson lesson) {
-        List<LessonItemDTO> itemDTOs = lesson.getItems().stream()
-                .map(this::mapToDTO)
+        return mapToDTO(lesson, null, false);
+    }
+
+    private LessonDTO mapToDTO(Lesson lesson, String lastTeacherMessage, boolean lastWasDoubt) {
+        ExerciseDTO currentExercise = lesson.getExercises().stream()
+                .filter(e -> !e.isAnswered())
+                .findFirst()
+                .map(ex -> new ExerciseDTO(
+                        ex.getId(),
+                        ex.getContext().getId(),
+                        ex.getContext().getContent(),
+                        ex.getPromptPt(),
+                        ex.isAnswered() ? ex.getVariationNote() : null,
+                        ex.isAnswered() ? ex.getFeedback() : null,
+                        ex.isAnswered() ? ex.getScore() : null,
+                        ex.isAnswered()))
+                .orElse(null);
+
+        List<ContextStatsDTO> statsDTOs = contextStatsRepository.findByLessonId(lesson.getId())
+                .stream()
+                .map(s -> new ContextStatsDTO(
+                        s.getContext().getId(),
+                        s.getContext().getContent(),
+                        s.getTotalExercises(),
+                        s.getTotalScore(),
+                        s.getAverageScore()))
                 .toList();
 
         return new LessonDTO(
@@ -313,28 +608,20 @@ public class LessonService {
                 lesson.getFinalFeedback(),
                 lesson.getCreatedAt(),
                 lesson.getCompletedAt(),
-                itemDTOs);
+                lesson.getExerciseCount(),
+                currentExercise,
+                lastTeacherMessage,
+                lastWasDoubt,
+                statsDTOs);
     }
 
-    private LessonItemDTO mapToDTO(LessonItem item) {
-        return new LessonItemDTO(
-                item.getId(),
-                item.getContext().getId(),
-                item.getPosition(),
-                item.getPromptPt(),
-                item.isCompleted() ? item.getExpectedAnswerEn() : null,
-                item.getLastAnswer(),
-                item.getTeacherFeedback(),
-                item.getScore(),
-                item.isCompleted());
-    }
+    // ════════════════════════════════════════════════════════════════
+    // RECORDS
+    // ════════════════════════════════════════════════════════════════
 
-    private record LessonPlan(String intro, List<PlannedItem> items) {
-    }
-
-    private record PlannedItem(String promptPt, String expectedAnswerEn) {
-    }
-
-    private record TeacherEvaluation(Integer score, String feedback) {
-    }
+    private record IntroAndExerciseResult(String intro, ExercisePart exercise) {}
+    private record ExercisePart(long contextId, String promptPt, String expectedAnswerEn, String variationNote) {}
+    private record NextExerciseResult(long contextId, String promptPt, String expectedAnswerEn, String variationNote) {}
+    private record TeacherEvaluation(Integer score, String feedback) {}
+    private record ClassificationResult(boolean isDoubt, String teacherMessage) {}
 }
