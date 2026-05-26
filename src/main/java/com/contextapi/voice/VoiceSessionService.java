@@ -20,6 +20,7 @@ public class VoiceSessionService {
 
     public record ProcessResult(byte[] audio, String transcript, String responseText) {}
     public record GreetingResult(byte[] audio, String greetingText) {}
+    public record SynthesizeResult(byte[] audio, String text) {}
 
     private final SpeechToTextProvider sttProvider;
     private final TextToSpeechProvider ttsProvider;
@@ -77,6 +78,7 @@ public class VoiceSessionService {
      * Processes a voice input: transcribe and submit to LessonService.
      */
     public void processVoiceInput(String sessionId, byte[] audioData,
+                                   Consumer<String> transcriptCallback,
                                    Consumer<ProcessResult> callback) {
         Lesson lesson = lessonRepository
                 .findFirstByStatusOrderByCreatedAtDesc(LessonStatus.IN_PROGRESS)
@@ -109,6 +111,8 @@ public class VoiceSessionService {
                 callback.accept(new ProcessResult(null, "", ""));
                 return;
             }
+            // Libera o transcript para o front IMEDIATAMENTE
+            transcriptCallback.accept(transcript);
         } else {
             callback.accept(new ProcessResult(null, "", "STT nao configurado."));
             return;
@@ -135,6 +139,15 @@ public class VoiceSessionService {
             callback.accept(new ProcessResult(null, transcript,
                     "Erro ao processar resposta: " + e.getMessage()));
         }
+    }
+
+    /**
+     * Synthesizes arbitrary text via TTS provider and returns audio + text.
+     * Called when the frontend sends a "speak" command over WebSocket.
+     */
+    public void synthesizeText(String text, Consumer<SynthesizeResult> callback) {
+        byte[] audio = ttsProvider.isConfigured() ? ttsProvider.synthesize(text) : null;
+        callback.accept(new SynthesizeResult(audio, text));
     }
 
     public void endSession(String sessionId) {

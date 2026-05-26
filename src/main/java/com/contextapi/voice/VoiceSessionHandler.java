@@ -3,13 +3,17 @@ package com.contextapi.voice;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.socket.BinaryMessage;
 import org.springframework.web.socket.CloseStatus;
+import org.springframework.web.socket.TextMessage;
 import org.springframework.web.socket.WebSocketSession;
 import org.springframework.web.socket.handler.BinaryWebSocketHandler;
 
 import java.io.ByteArrayOutputStream;
 import java.nio.ByteBuffer;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 @Slf4j
 public class VoiceSessionHandler extends BinaryWebSocketHandler {
@@ -21,6 +25,9 @@ public class VoiceSessionHandler extends BinaryWebSocketHandler {
     private final Map<String, ByteArrayOutputStream> sessionBuffers = new ConcurrentHashMap<>();
     private final VoiceSessionService voiceSessionService;
 
+    // Pool dedicado — não bloqueia a thread do WebSocket
+    private final ExecutorService voiceExecutor = Executors.newCachedThreadPool();
+
     public VoiceSessionHandler(VoiceSessionService voiceSessionService) {
         this.voiceSessionService = voiceSessionService;
     }
@@ -29,12 +36,53 @@ public class VoiceSessionHandler extends BinaryWebSocketHandler {
     public void afterConnectionEstablished(WebSocketSession session) {
         log.info("Voice WebSocket connected: {}", session.getId());
         sessionBuffers.put(session.getId(), new ByteArrayOutputStream());
-        voiceSessionService.startSession(session.getId(), result -> {
-            sendTextMessage(session, "{\"type\":\"response\",\"text\":\"" + escapeJson(result.greetingText()) + "\"}");
-            if (result.audio() != null) {
-                sendBinaryMessage(session, result.audio());
+
+        // Despacha saudação (TTS pode ser lento) para o pool
+        CompletableFuture.runAsync(() -> {
+            voiceSessionService.startSession(session.getId(), result -> {
+                sendTextMessage(session, "{\"type\":\"response\",\"text\":\"" + escapeJson(result.greetingText()) + "\"}");
+                if (result.audio() != null) {
+                    sendBinaryMessage(session, result.audio());
+                }
+            });
+        }, voiceExecutor);
+    }
+
+    @Override
+    protected void handleTextMessage(WebSocketSession session, TextMessage message) {
+        String payload = message.getPayload();
+        log.debug("Text message from session {}: {}", session.getId(), payload);
+
+        try {
+            // Simple JSON parsing — expect {"type":"speak","text":"..."}
+            if (payload.contains("\"type\":\"speak\"") || payload.contains("\"type\":\"next\"")) {
+                String text = extractJsonValue(payload, "text");
+                // Despacha TTS para o pool
+                CompletableFuture.runAsync(() -> {
+                    voiceSessionService.synthesizeText(text, result -> {
+                        sendTextMessage(session, "{\"type\":\"response\",\"text\":\"" + escapeJson(result.text()) + "\"}");
+                        if (result.audio() != null) {
+                            sendBinaryMessage(session, result.audio());
+                        }
+                    });
+                }, voiceExecutor);
             }
-        });
+        } catch (Exception e) {
+            log.error("Failed to handle text message: {}", e.getMessage());
+        }
+    }
+
+    /**
+     * Simple JSON value extractor for quoted keys. Not a full parser — sufficient
+     * for our small control messages.
+     */
+    private String extractJsonValue(String json, String key) {
+        String search = "\"" + key + "\":\"";
+        int start = json.indexOf(search);
+        if (start < 0) return null;
+        start += search.length();
+        int end = json.indexOf("\"", start);
+        return end > start ? json.substring(start, end) : null;
     }
 
     @Override
@@ -81,23 +129,27 @@ public class VoiceSessionHandler extends BinaryWebSocketHandler {
 
         log.debug("Processing audio from session {}: {} bytes", session.getId(), audioData.length);
 
-        voiceSessionService.processVoiceInput(session.getId(), audioData, result -> {
-            // Only send transcript — no AI response
-            if (!result.transcript().isBlank()) {
-                sendTextMessage(session, "{\"type\":\"transcript\",\"text\":\"" + escapeJson(result.transcript()) + "\"}");
-            }
-            // Send teacher response text and TTS
-            if (!result.responseText().isBlank()) {
-                sendTextMessage(session, "{\"type\":\"response\",\"text\":\"" + escapeJson(result.responseText()) + "\"}");
-            }
-            if (result.audio() != null) {
-                sendBinaryMessage(session, result.audio());
-            }
-            // Send error when both transcript and response are empty
-            if (result.transcript().isBlank() && result.responseText().isBlank()) {
-                sendTextMessage(session, "{\"type\":\"error\",\"message\":\"Rate limit do STT atingido. Tente novamente em instantes.\"}");
-            }
-        });
+        // Despacha STT → LLM → TTS para o pool — não trava a thread do WebSocket
+        CompletableFuture.runAsync(() -> {
+            voiceSessionService.processVoiceInput(session.getId(), audioData,
+                // Transcript callback — enviado assim que STT terminar
+                transcript -> {
+                    sendTextMessage(session, "{\"type\":\"transcript\",\"text\":\"" + escapeJson(transcript) + "\"}");
+                },
+                // Full result callback — LLM + TTS
+                result -> {
+                    if (!result.responseText().isBlank()) {
+                        sendTextMessage(session, "{\"type\":\"response\",\"text\":\"" + escapeJson(result.responseText()) + "\"}");
+                    }
+                    if (result.audio() != null) {
+                        sendBinaryMessage(session, result.audio());
+                    }
+                    if (result.transcript().isBlank() && result.responseText().isBlank()) {
+                        sendTextMessage(session, "{\"type\":\"error\",\"message\":\"Rate limit do STT atingido. Tente novamente em instantes.\"}");
+                    }
+                }
+            );
+        }, voiceExecutor);
     }
 
     /**

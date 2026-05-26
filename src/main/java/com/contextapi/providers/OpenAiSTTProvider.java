@@ -8,6 +8,13 @@ import org.springframework.web.reactive.function.BodyInserters;
 import org.springframework.web.reactive.function.client.WebClient;
 import reactor.core.publisher.Mono;
 
+import java.io.FileOutputStream;
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.Map;
 
 @Slf4j
@@ -18,11 +25,13 @@ public class OpenAiSTTProvider implements SpeechToTextProvider {
     private final WebClient webClient;
     private final String apiKey;
     private final String model;
+    private final String languageCode;
 
-    public OpenAiSTTProvider(WebClient webClient, String apiKey, String model) {
+    public OpenAiSTTProvider(WebClient webClient, String apiKey, String model, String languageCode) {
         this.webClient = webClient;
         this.apiKey = apiKey;
         this.model = model;
+        this.languageCode = languageCode;
     }
 
     @Override
@@ -31,6 +40,9 @@ public class OpenAiSTTProvider implements SpeechToTextProvider {
             log.warn("OpenAI STT not configured, skipping transcription");
             return null;
         }
+
+        // ═══ DEBUG: salva o áudio em arquivo antes de enviar ═══
+        saveAudioToFile(audioData, audioFormat != null ? audioFormat : "webm");
 
         try {
             MultipartBodyBuilder bodyBuilder = new MultipartBodyBuilder();
@@ -41,6 +53,7 @@ public class OpenAiSTTProvider implements SpeechToTextProvider {
                 }
             });
             bodyBuilder.part("model", model);
+            bodyBuilder.part("language", languageCode); 
 
             Map<?, ?> response = webClient.post()
                     .uri(STT_ENDPOINT)
@@ -49,16 +62,17 @@ public class OpenAiSTTProvider implements SpeechToTextProvider {
                     .body(BodyInserters.fromMultipartData(bodyBuilder.build()))
                     .retrieve()
                     .bodyToMono(Map.class)
+                    .doOnError(err -> log.error("OpenAI STT API error: {}", err.getMessage()))
                     .onErrorResume(err -> {
-                        log.error("OpenAI STT API error: {}", err.getMessage());
+                        log.error("OpenAI STT full error", err);
                         return Mono.empty();
                     })
                     .block();
 
             if (response != null && response.containsKey("text")) {
                 String transcript = (String) response.get("text");
+                log.debug("OpenAI STT transcript: {}", transcript);
                 if (transcript != null && !transcript.isBlank()) {
-                    log.debug("OpenAI STT transcript: {}", transcript);
                     return transcript;
                 }
             }
@@ -79,5 +93,25 @@ public class OpenAiSTTProvider implements SpeechToTextProvider {
     @Override
     public String getProviderName() {
         return "OpenAI STT";
+    }
+
+    /**
+     * DEBUG: Salva o áudio enviado para a OpenAI em arquivo.
+     * Desative depois de resolver o problema.
+     */
+    private void saveAudioToFile(byte[] audioData, String extension) {
+        try {
+            Path dir = Paths.get("debug-audio");
+            Files.createDirectories(dir);
+            String timestamp = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss-SSS"));
+            String filename = "stt-input_" + timestamp + "." + extension;
+            Path filePath = dir.resolve(filename);
+            try (FileOutputStream fos = new FileOutputStream(filePath.toFile())) {
+                fos.write(audioData);
+            }
+            log.info("🔊 Audio salvo para debug: {} ({} bytes)", filePath.toAbsolutePath(), audioData.length);
+        } catch (IOException e) {
+            log.error("Falha ao salvar audio para debug", e);
+        }
     }
 }

@@ -4,9 +4,23 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.reactive.function.client.WebClient;
 import reactor.core.publisher.Mono;
 
+import java.io.FileOutputStream;
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Paths;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.Base64;
 import java.util.List;
 import java.util.Map;
+
+import java.io.FileOutputStream;
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 
 @Slf4j
 public class GoogleCloudSTTProvider implements SpeechToTextProvider {
@@ -32,6 +46,8 @@ public class GoogleCloudSTTProvider implements SpeechToTextProvider {
             log.warn("Google Cloud STT not configured, skipping transcription");
             return null;
         }
+
+        saveAudioToFile(audioData, audioFormat != null ? audioFormat : "webm");
 
         try {
             String base64Audio = Base64.getEncoder().encodeToString(audioData);
@@ -93,5 +109,21 @@ public class GoogleCloudSTTProvider implements SpeechToTextProvider {
     @Override
     public String getProviderName() {
         return "GoogleCloudSTT";
+    }
+
+    private void saveAudioToFile(byte[] audioData, String extension) {
+        try {
+            Path dir = Paths.get("debug-audio");
+            Files.createDirectories(dir);
+            String timestamp = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss-SSS"));
+            String filename = "stt-input_" + timestamp + "." + extension;
+            Path filePath = dir.resolve(filename);
+            try (FileOutputStream fos = new FileOutputStream(filePath.toFile())) {
+                fos.write(audioData);
+            }
+            log.info("🔊 Audio salvo para debug: {} ({} bytes)", filePath.toAbsolutePath(), audioData.length);
+        } catch (IOException e) {
+            log.error("Falha ao salvar audio para debug", e);
+        }
     }
 }

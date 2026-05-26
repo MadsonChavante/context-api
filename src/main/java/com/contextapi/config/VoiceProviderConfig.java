@@ -47,11 +47,14 @@ public class VoiceProviderConfig {
     @Value("${openai.tts.voice:alloy}")
     private String openaiTtsVoice;
 
+    @Value("${openai.stt.language:en}")
+    private String openaiSttLanguage;
+
     @Bean
     public SpeechToTextProvider speechToTextProvider(WebClient webClient) {
         if ("openai".equalsIgnoreCase(sttProvider)) {
             if (openaiApiKey != null && !openaiApiKey.isBlank()) {
-                return new OpenAiSTTProvider(webClient, openaiApiKey, openaiSttModel);
+                return new OpenAiSTTProvider(webClient, openaiApiKey, openaiSttModel, openaiSttLanguage);
             }
         }
 
