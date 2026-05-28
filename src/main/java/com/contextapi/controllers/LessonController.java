@@ -20,7 +20,7 @@ public class LessonController {
     private final LessonService lessonService;
 
     @PostMapping
-    public ResponseEntity<LessonDTO> create(@RequestBody(required = false) CreateLessonRequest request) {
+    public ResponseEntity<LessonDTO> create(@RequestBody(required = false) CreateLessonRequest request) throws Exception {
         log.debug("POST request to create lesson");
         return ResponseEntity.status(HttpStatus.CREATED).body(lessonService.create(request));
     }
@@ -41,18 +41,12 @@ public class LessonController {
         return ResponseEntity.ok(lessonService.findById(id));
     }
 
-    @PostMapping("/{id}/answers")
-    public ResponseEntity<LessonDTO> submitAnswer(
-            @PathVariable Long id,
-            @Valid @RequestBody SubmitAnswerRequest request) {
-        log.debug("POST request to submit answer for lesson id: {}", id);
-        return ResponseEntity.ok(lessonService.submitAnswer(id, request));
-    }
-
     @PostMapping("/{id}/next")
-    public ResponseEntity<LessonDTO> next(@PathVariable Long id) {
-        log.debug("POST request to generate next exercise for lesson id: {}", id);
-        return ResponseEntity.ok(lessonService.next(id));
+    public ResponseEntity<LessonDTO> next(
+            @PathVariable Long id,
+            @Valid @RequestBody SubmitAnswerRequest request) throws Exception {
+        log.debug("POST request to generate next interaction for lesson id: {}", id);
+        return ResponseEntity.ok(lessonService.next(id, request.getAnswer()));
     }
 
     @PostMapping("/{id}/finish")

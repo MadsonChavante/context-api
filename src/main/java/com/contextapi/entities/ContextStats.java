@@ -5,10 +5,6 @@ import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
-/**
- * Accumulated statistics for a specific context within a lesson.
- * Updated each time the student answers an exercise about this context.
- */
 @Entity
 @Table(name = "context_stats")
 @Data
@@ -20,19 +16,16 @@ public class ContextStats {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @ManyToOne(fetch = FetchType.LAZY, optional = false)
-    @JoinColumn(name = "lesson_id", nullable = false)
-    private Lesson lesson;
+    @Column(name = "lesson_id", nullable = false)
+    private Long lessonId;
 
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "context_id", nullable = false)
     private Context context;
 
-    /** Total number of exercises answered for this context */
     @Column(nullable = false)
     private int totalExercises = 0;
-
-    /** Sum of scores (0-100 each) */
+    
     @Column(nullable = false)
     private int totalScore = 0;
 

@@ -15,7 +15,7 @@ public class VoiceProviderConfig {
     @Value("${voice.tts.provider:google}")
     private String ttsProvider;
 
-    // Google Cloud configs
+    
     @Value("${google.cloud.api.key:}")
     private String googleApiKey;
 
@@ -34,7 +34,7 @@ public class VoiceProviderConfig {
     @Value("${google.cloud.tts.speaking-rate:1.0}")
     private String speakingRate;
 
-    // OpenAI configs
+    
     @Value("${openai.api.key:}")
     private String openaiApiKey;
 
@@ -80,3 +80,4 @@ public class VoiceProviderConfig {
         return new NoOpTextToSpeechProvider();
     }
 }
+

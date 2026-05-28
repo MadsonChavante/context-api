@@ -15,11 +15,11 @@ public class ExerciseDTO {
     private Long contextId;
     private String contextContent;
     private String promptPt;
-    /** Shown only after answering */
+    
     private String variationNote;
-    /** Shown only after answering */
+    
     private String feedback;
-    /** Shown only after answering */
+    
     private Integer score;
     private boolean answered;
 }

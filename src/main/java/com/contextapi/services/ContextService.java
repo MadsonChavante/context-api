@@ -2,10 +2,16 @@ package com.contextapi.services;
 
 import com.contextapi.dtos.ContextDTO;
 import com.contextapi.entities.Context;
+import com.contextapi.entities.ContextStats;
 import com.contextapi.exceptions.ResourceNotFoundException;
 import com.contextapi.repositories.ContextRepository;
+import com.contextapi.repositories.ContextStatsRepository;
+
 import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+
+import java.util.List;
+
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
@@ -18,6 +24,7 @@ import org.springframework.transaction.annotation.Transactional;
 public class ContextService {
 
     private final ContextRepository contextRepository;
+    private final ContextStatsRepository contextStatsRepository;
     private final AiService aiService;
 
     @Transactional(readOnly = true)
@@ -25,8 +32,7 @@ public class ContextService {
         log.debug("Finding context by id: {}", id);
         Context context = contextRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException(
-                        String.format("Context not found with id: %d", id)
-                ));
+                        String.format("Context not found with id: %d", id)));
         return mapToDTO(context);
     }
 
@@ -35,6 +41,11 @@ public class ContextService {
         log.debug("Finding all contexts with pagination: {}", pageable);
         return contextRepository.findAll(pageable)
                 .map(this::mapToDTO);
+    }
+
+    public List<Context> findAll() {
+        log.debug("Finding all contexts");
+        return contextRepository.findAll();
     }
 
     public ContextDTO create(ContextDTO contextDTO) {
@@ -55,8 +66,7 @@ public class ContextService {
         log.debug("Updating context with id: {}", id);
         Context context = contextRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException(
-                        String.format("Context not found with id: %d", id)
-                ));
+                        String.format("Context not found with id: %d", id)));
 
         String sanitizedContent = sanitizeContent(contextDTO.getContent());
         context.setContent(sanitizedContent);
@@ -75,12 +85,10 @@ public class ContextService {
         log.debug("Deleting context with id: {}", id);
         Context context = contextRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException(
-                        String.format("Context not found with id: %d", id)
-                ));
+                        String.format("Context not found with id: %d", id)));
         contextRepository.delete(context);
         log.info("Context deleted successfully with id: {}", id);
     }
-
 
     private String sanitizeContent(String content) {
         if (content == null) {
@@ -108,5 +116,12 @@ public class ContextService {
         Context context = new Context();
         context.setContent(contextDTO.getContent());
         return context;
+    }
+
+    public ContextStats getContextStats(Long contextId) {
+        return contextStatsRepository.findByContextId(contextId).orElseGet(() -> {
+            ContextStats contextStats = new ContextStats();
+            return contextStats;
+        });
     }
 }

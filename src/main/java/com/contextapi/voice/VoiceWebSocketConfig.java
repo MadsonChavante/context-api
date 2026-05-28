@@ -1,8 +1,5 @@
 package com.contextapi.voice;
 
-import com.contextapi.repositories.LessonExerciseRepository;
-import com.contextapi.repositories.LessonRepository;
-import com.contextapi.services.LessonService;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.web.socket.config.annotation.EnableWebSocket;
@@ -16,14 +13,8 @@ public class VoiceWebSocketConfig implements WebSocketConfigurer {
 
     private final VoiceSessionService voiceSessionService;
 
-    public VoiceWebSocketConfig(
-            com.contextapi.providers.SpeechToTextProvider sttProvider,
-            com.contextapi.providers.TextToSpeechProvider ttsProvider,
-            LessonRepository lessonRepository,
-            LessonExerciseRepository exerciseRepository,
-            LessonService lessonService) {
-        this.voiceSessionService = new VoiceSessionService(
-                sttProvider, ttsProvider, lessonRepository, exerciseRepository, lessonService);
+    public VoiceWebSocketConfig(VoiceSessionService voiceSessionService) {
+        this.voiceSessionService = voiceSessionService;
     }
 
     @Override

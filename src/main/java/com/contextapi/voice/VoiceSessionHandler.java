@@ -25,7 +25,7 @@ public class VoiceSessionHandler extends BinaryWebSocketHandler {
     private final Map<String, ByteArrayOutputStream> sessionBuffers = new ConcurrentHashMap<>();
     private final VoiceSessionService voiceSessionService;
 
-    // Pool dedicado — não bloqueia a thread do WebSocket
+    
     private final ExecutorService voiceExecutor = Executors.newCachedThreadPool();
 
     public VoiceSessionHandler(VoiceSessionService voiceSessionService) {
@@ -37,9 +37,9 @@ public class VoiceSessionHandler extends BinaryWebSocketHandler {
         log.info("Voice WebSocket connected: {}", session.getId());
         sessionBuffers.put(session.getId(), new ByteArrayOutputStream());
 
-        // Despacha saudação (TTS pode ser lento) para o pool
+        
         CompletableFuture.runAsync(() -> {
-            voiceSessionService.startSession(session.getId(), result -> {
+            voiceSessionService.startSession(result -> {
                 sendTextMessage(session, "{\"type\":\"response\",\"text\":\"" + escapeJson(result.greetingText()) + "\"}");
                 if (result.audio() != null) {
                     sendBinaryMessage(session, result.audio());
@@ -54,10 +54,10 @@ public class VoiceSessionHandler extends BinaryWebSocketHandler {
         log.debug("Text message from session {}: {}", session.getId(), payload);
 
         try {
-            // Simple JSON parsing — expect {"type":"speak","text":"..."}
+            
             if (payload.contains("\"type\":\"speak\"") || payload.contains("\"type\":\"next\"")) {
                 String text = extractJsonValue(payload, "text");
-                // Despacha TTS para o pool
+                
                 CompletableFuture.runAsync(() -> {
                     voiceSessionService.synthesizeText(text, result -> {
                         sendTextMessage(session, "{\"type\":\"response\",\"text\":\"" + escapeJson(result.text()) + "\"}");
@@ -129,14 +129,14 @@ public class VoiceSessionHandler extends BinaryWebSocketHandler {
 
         log.debug("Processing audio from session {}: {} bytes", session.getId(), audioData.length);
 
-        // Despacha STT → LLM → TTS para o pool — não trava a thread do WebSocket
+        
         CompletableFuture.runAsync(() -> {
             voiceSessionService.processVoiceInput(session.getId(), audioData,
-                // Transcript callback — enviado assim que STT terminar
+                
                 transcript -> {
                     sendTextMessage(session, "{\"type\":\"transcript\",\"text\":\"" + escapeJson(transcript) + "\"}");
                 },
-                // Full result callback — LLM + TTS
+                
                 result -> {
                     if (!result.responseText().isBlank()) {
                         sendTextMessage(session, "{\"type\":\"response\",\"text\":\"" + escapeJson(result.responseText()) + "\"}");
@@ -163,15 +163,15 @@ public class VoiceSessionHandler extends BinaryWebSocketHandler {
             return false;
         }
 
-        // Check RMS energy - works best with PCM16 raw audio
-        // For WebM/Opus encoded data, we do a sample-based RMS on raw bytes
+        
+        
         double sumSquares = 0;
         int samples = 0;
 
-        // Process min(4000 bytes, actual) to keep it fast
+        
         int checkLength = Math.min(audioData.length, 4000);
         for (int i = 0; i < checkLength - 1; i += 2) {
-            // Convert 2 bytes to signed 16-bit sample
+            
             short sample = (short) (((audioData[i + 1] & 0xFF) << 8) | (audioData[i] & 0xFF));
             sumSquares += sample * sample;
             samples++;
@@ -222,3 +222,4 @@ public class VoiceSessionHandler extends BinaryWebSocketHandler {
                 .replace("\t", "\\t");
     }
 }
+

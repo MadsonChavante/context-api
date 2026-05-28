@@ -14,13 +14,7 @@ import java.util.Base64;
 import java.util.List;
 import java.util.Map;
 
-import java.io.FileOutputStream;
-import java.io.IOException;
-import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.Paths;
-import java.time.LocalDateTime;
-import java.time.format.DateTimeFormatter;
 
 @Slf4j
 public class GoogleCloudSTTProvider implements SpeechToTextProvider {
