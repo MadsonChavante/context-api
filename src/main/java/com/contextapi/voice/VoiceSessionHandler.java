@@ -19,8 +19,8 @@ import java.util.concurrent.Executors;
 public class VoiceSessionHandler extends BinaryWebSocketHandler {
 
     private static final int MAX_AUDIO_BYTES = 512 * 1024;
-    private static final int MIN_AUDIO_BYTES = 1024;
-    private static final double VAD_ENERGY_THRESHOLD = 200.0;
+    private static final int MIN_AUDIO_BYTES = 8000;  // ~500ms of audio at 16kHz
+    private static final double VAD_ENERGY_THRESHOLD = 300.0;
 
     private final Map<String, ByteArrayOutputStream> sessionBuffers = new ConcurrentHashMap<>();
     private final VoiceSessionService voiceSessionService;
@@ -139,10 +139,18 @@ public class VoiceSessionHandler extends BinaryWebSocketHandler {
                 
                 result -> {
                     if (!result.responseText().isBlank()) {
+                        log.debug("Sending response to session {}: {}", session.getId(), result.responseText());
                         sendTextMessage(session, "{\"type\":\"response\",\"text\":\"" + escapeJson(result.responseText()) + "\"}");
-                    }
-                    if (result.audio() != null) {
-                        sendBinaryMessage(session, result.audio());
+                        
+                        // Send audio after a small delay to ensure message is processed
+                        if (result.audio() != null) {
+                            try {
+                                Thread.sleep(100); // 100ms delay between text and audio
+                            } catch (InterruptedException e) {
+                                Thread.currentThread().interrupt();
+                            }
+                            sendBinaryMessage(session, result.audio());
+                        }
                     }
                     if (result.transcript().isBlank() && result.responseText().isBlank()) {
                         sendTextMessage(session, "{\"type\":\"error\",\"message\":\"Rate limit do STT atingido. Tente novamente em instantes.\"}");
@@ -162,12 +170,9 @@ public class VoiceSessionHandler extends BinaryWebSocketHandler {
         if (audioData == null || audioData.length < 256) {
             return false;
         }
-
-        
         
         double sumSquares = 0;
         int samples = 0;
-
         
         int checkLength = Math.min(audioData.length, 4000);
         for (int i = 0; i < checkLength - 1; i += 2) {
@@ -185,7 +190,7 @@ public class VoiceSessionHandler extends BinaryWebSocketHandler {
 
     private void sendTextMessage(WebSocketSession session, String text) {
         try {
-            session.sendMessage(new org.springframework.web.socket.TextMessage(text));
+            session.sendMessage(new TextMessage(text));
         } catch (Exception e) {
             log.error("Failed to send WebSocket text message: {}", e.getMessage());
         }

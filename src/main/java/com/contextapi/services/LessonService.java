@@ -34,6 +34,22 @@ public class LessonService {
         this.raptorDynamic = raptorDynamic;
     }
 
+    public String startVoice() {
+        Lesson lesson = lessonRepository.findFirstByStatusOrderByCreatedAtDesc(LessonStatus.IN_PROGRESS)
+                .orElseThrow(() -> new IllegalStateException("No active lesson"));
+
+        String response = raptorDynamic.startVoice(lesson.getConversationHistory());
+
+        // ConversationMessage nextTeacherMessage = new ConversationMessage();
+        // nextTeacherMessage.setAuthor(ConversationAuthor.TEACHER);
+        // nextTeacherMessage.setType(ConversationMessage.MessageType.EXERCISE);
+        // nextTeacherMessage.setContent(response);
+        // lesson.getConversationHistory().add(nextTeacherMessage);
+
+        // lessonRepository.save(lesson);
+        return response;
+    }
+
     public LessonDTO create(CreateLessonRequest request) throws Exception {
         List<Context> contexts = contextRepository.findAll();
         if (contexts.isEmpty()) {
@@ -71,7 +87,7 @@ public class LessonService {
             throw new IllegalArgumentException("This lesson is already completed");
         }
 
-        HandleAnswerResult handleAnswerResult = raptorDynamic.handleAnswer(answer);
+        HandleAnswerResult handleAnswerResult = raptorDynamic.handleAnswer(answer, lesson.getConversationHistory());
 
         ConversationMessage studentMessage = new ConversationMessage();
         studentMessage.setAuthor(ConversationAuthor.STUDENT);

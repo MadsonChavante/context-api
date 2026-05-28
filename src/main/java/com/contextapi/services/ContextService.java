@@ -1,17 +1,18 @@
 package com.contextapi.services;
 
 import com.contextapi.dtos.ContextDTO;
+import com.contextapi.dynamics.RaptorDynamic;
 import com.contextapi.entities.Context;
 import com.contextapi.entities.ContextStats;
 import com.contextapi.exceptions.ResourceNotFoundException;
 import com.contextapi.repositories.ContextRepository;
 import com.contextapi.repositories.ContextStatsRepository;
 
-import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
 import java.util.List;
 
+import org.springframework.context.annotation.Lazy;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
@@ -19,13 +20,20 @@ import org.springframework.transaction.annotation.Transactional;
 
 @Slf4j
 @Service
-@AllArgsConstructor
 @Transactional
 public class ContextService {
 
     private final ContextRepository contextRepository;
     private final ContextStatsRepository contextStatsRepository;
-    private final AiService aiService;
+    private final RaptorDynamic raptorDynamic;
+
+    public ContextService(ContextRepository contextRepository,
+                          ContextStatsRepository contextStatsRepository,
+                          @Lazy RaptorDynamic raptorDynamic) {
+        this.contextRepository = contextRepository;
+        this.contextStatsRepository = contextStatsRepository;
+        this.raptorDynamic = raptorDynamic;
+    }
 
     @Transactional(readOnly = true)
     public ContextDTO findById(Long id) {
@@ -55,7 +63,7 @@ public class ContextService {
         Context savedContext = contextRepository.save(context);
         log.info("Context created successfully with id: {}", savedContext.getId());
 
-        String analysis = aiService.analyze(savedContext.getContent());
+        String analysis = raptorDynamic.analyze(savedContext.getContent());
         savedContext.setAiAnalysis(analysis);
         savedContext = contextRepository.save(savedContext);
 
@@ -74,7 +82,7 @@ public class ContextService {
         Context updatedContext = contextRepository.save(context);
         log.info("Context updated successfully with id: {}", id);
 
-        String analysis = aiService.analyze(updatedContext.getContent());
+        String analysis = raptorDynamic.analyze(updatedContext.getContent());
         updatedContext.setAiAnalysis(analysis);
         updatedContext = contextRepository.save(updatedContext);
 

@@ -19,6 +19,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 @Slf4j
 @Component
@@ -26,6 +28,7 @@ public class RaptorDynamic {
 
     private final AiService aiService;
     private final ContextService contextService;
+    private static final Pattern JSON_EXTRACT_PATTERN = Pattern.compile("\\{.*\\}", Pattern.DOTALL);
     public final String intro = "Opa, vamos praticar! Que ótimo. Bora conversar então." +
             "Vou falar uma frase em portugues e quero que voce traduza para o ingles. " +
             "Se tiver duvidas, pode perguntar, ok?";
@@ -61,7 +64,8 @@ public class RaptorDynamic {
         }
 
         try {
-            JsonNode node = new ObjectMapper().readTree(responseAiService);
+            String cleanedJson = extractJsonFromResponse(responseAiService);
+            JsonNode node = new ObjectMapper().readTree(cleanedJson);
 
             Long contextId = node.get("contextId").asLong();
             String response = node.get("response").asText();
@@ -73,13 +77,14 @@ public class RaptorDynamic {
         }
     }
 
-    public String startVoice() {
-        String content = "Voces ja estavam conversando por texto e agora vao comecar a conversar por fala,";
-        String prompt = buildPrompt(content);
-        return aiService.complete(prompt, 800, 0.6);
+    public String startVoice(List<ConversationMessage> conversationHistory) {
+        String result = "traduza para o ingles: " + conversationHistory.get(conversationHistory.size() - 1).getContent();
+        // String prompt = buildPrompt(content, conversationHistory);
+        // return aiService.complete(prompt, 800, 0.6);
+        return result;
     }
 
-    public HandleAnswerResult handleAnswer(String answer) throws Exception{
+    public HandleAnswerResult handleAnswer(String answer, List<ConversationMessage> conversationHistory) throws Exception{
 
         StringBuilder content = new StringBuilder();
         content.append("O aluno respondeu: ").append(answer).append("\n");
@@ -112,7 +117,8 @@ public class RaptorDynamic {
         }
 
         try {
-            JsonNode node = new ObjectMapper().readTree(responseAiService);
+            String cleanedJson = extractJsonFromResponse(responseAiService);
+            JsonNode node = new ObjectMapper().readTree(cleanedJson);
 
             String AnswerType = node.get("AnswerType").asText();
             String response = node.get("response").asText();
@@ -195,4 +201,39 @@ public class RaptorDynamic {
         return sb.toString();
     }
 
+    public String analyze(String content) {
+        String prompt = "Voce e um assistente de aprendizado de ingles descontraido e direto ao ponto.\n\n"
+            + "O usuario quer aprender ingles ou tirar duvidas com base neste contexto:\n"
+            + "\"%s\"\n\n"
+            + "Responda em no maximo 2-3 linhas, em portugues, dizendo apenas o que entendeu do contexto.\n\n"
+            + "Regras:\n"
+            + "- Apenas diga o que entendeu do contexto, sem explicar ou aprofundar\n"
+            + "- Mantenha o foco em ingles com base no contexto do usuario\n"
+            + "- Nao fuja do tema\n"
+            + "- Nao faca perguntas nem convide para continuar a conversa\n"
+            + "- Se houver termos em ingles faca a traducao de forma natural para portugues na resposta\n"
+            + "- Se houver termos em portugues faca a traducao de forma natural para ingles na resposta\n"
+            + "- Nada de saudacoes ou introducoes";
+        return aiService.analyze(prompt, content);
+    }
+
+    /**
+     * Extrai JSON válido da resposta da IA, removendo qualquer lixo antes ou depois.
+     * Usa regex para encontrar o primeiro { até o último }.
+     */
+    private String extractJsonFromResponse(String response) {
+        if (response == null || response.trim().isEmpty()) {
+            return response;
+        }
+        
+        Matcher matcher = JSON_EXTRACT_PATTERN.matcher(response);
+        if (matcher.find()) {
+            String extracted = matcher.group();
+            log.debug("Extracted JSON from response: {}", extracted);
+            return extracted;
+        }
+        
+        log.warn("No JSON found in response: {}", response);
+        return response;
+    }
 }
