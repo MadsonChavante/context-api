@@ -1,17 +1,12 @@
 package com.contextapi.dynamics;
 
 import com.contextapi.entities.ConversationMessage;
-import com.contextapi.entities.ConversationMessage.MessageType;
-import com.contextapi.dtos.LessonDTO;
 import com.contextapi.entities.Context;
 import com.contextapi.entities.ContextStats;
 import com.contextapi.enums.ConversationAuthor;
 import com.contextapi.exceptions.AiServiceException;
-import com.contextapi.records.ClassificationResult;
-import com.contextapi.records.EvaluationResult;
 import com.contextapi.records.HandleAnswerResult;
 import com.contextapi.records.ResponseIAResult;
-import com.contextapi.records.NextExerciseResult;
 import com.contextapi.services.AiService;
 import com.contextapi.services.ContextService;
 import com.fasterxml.jackson.databind.JsonNode;

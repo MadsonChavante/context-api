@@ -54,7 +54,7 @@ public class LessonService {
         ConversationMessage conversationMessage = new ConversationMessage();
         conversationMessage.setAuthor(ConversationAuthor.TEACHER);
         conversationMessage.setType(ConversationMessage.MessageType.GREETING);
-        conversationMessage.setContent(raptorDynamic.INTRO);
+        conversationMessage.setContent(RaptorDynamic.INTRO);
         lesson.getConversationHistory().add(conversationMessage);
 
         ResponseIAResult result = raptorDynamic.startLesson();

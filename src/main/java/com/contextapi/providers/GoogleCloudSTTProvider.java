@@ -4,17 +4,9 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.reactive.function.client.WebClient;
 import reactor.core.publisher.Mono;
 
-import java.io.FileOutputStream;
-import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Paths;
-import java.time.LocalDateTime;
-import java.time.format.DateTimeFormatter;
 import java.util.Base64;
 import java.util.List;
 import java.util.Map;
-
-import java.nio.file.Path;
 
 @Slf4j
 public class GoogleCloudSTTProvider implements SpeechToTextProvider {
@@ -38,7 +30,7 @@ public class GoogleCloudSTTProvider implements SpeechToTextProvider {
     public String transcribe(byte[] audioData, String audioFormat) {
         if (!isConfigured()) {
             log.warn("Google Cloud STT not configured, skipping transcription");
-            return null;
+            return "";
         }
 
         try {
@@ -60,7 +52,7 @@ public class GoogleCloudSTTProvider implements SpeechToTextProvider {
             return extractTranscript(response);
         } catch (Exception e) {
             log.error("Failed to transcribe audio with Google Cloud STT: {}", e.getMessage(), e);
-            return null;
+            return "";
         }
     }
 
@@ -78,27 +70,28 @@ public class GoogleCloudSTTProvider implements SpeechToTextProvider {
     private String extractTranscript(Map<?, ?> response) {
         if (response == null || !response.containsKey("results")) {
             log.warn("Google Cloud STT returned no results");
-            return null;
+            return "";
         }
 
         List<?> results = (List<?>) response.get("results");
         if (results == null || results.isEmpty()) {
-            return null;
+            return "";
         }
 
         Map<?, ?> firstResult = (Map<?, ?>) results.get(0);
         List<?> alternatives = (List<?>) firstResult.get("alternatives");
         if (alternatives == null || alternatives.isEmpty()) {
-            return null;
+            return "";
         }
 
         Map<?, ?> bestAlternative = (Map<?, ?>) alternatives.get(0);
         String transcript = (String) bestAlternative.get("transcript");
+        
         if (transcript != null && !transcript.isBlank()) {
             log.debug("STT transcript: {}", transcript);
             return transcript;
         }
-        return null;
+        return "";
     }
 
     @Override
