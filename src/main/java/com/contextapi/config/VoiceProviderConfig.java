@@ -52,10 +52,8 @@ public class VoiceProviderConfig {
 
     @Bean
     public SpeechToTextProvider speechToTextProvider(WebClient webClient) {
-        if ("openai".equalsIgnoreCase(sttProvider)) {
-            if (openaiApiKey != null && !openaiApiKey.isBlank()) {
-                return new OpenAiSTTProvider(webClient, openaiApiKey, openaiSttModel, openaiSttLanguage);
-            }
+        if ("openai".equalsIgnoreCase(sttProvider) && openaiApiKey != null && !openaiApiKey.isBlank()) {
+            return new OpenAiSTTProvider(webClient, openaiApiKey, openaiSttModel, openaiSttLanguage);
         }
 
         if (googleApiKey != null && !googleApiKey.isBlank()) {
@@ -67,10 +65,8 @@ public class VoiceProviderConfig {
 
     @Bean
     public TextToSpeechProvider textToSpeechProvider(WebClient webClient) {
-        if ("openai".equalsIgnoreCase(ttsProvider)) {
-            if (openaiApiKey != null && !openaiApiKey.isBlank()) {
-                return new OpenAiTTSProvider(webClient, openaiApiKey, openaiTtsModel, openaiTtsVoice);
-            }
+        if ("openai".equalsIgnoreCase(ttsProvider) && openaiApiKey != null && !openaiApiKey.isBlank()) {
+            return new OpenAiTTSProvider(webClient, openaiApiKey, openaiTtsModel, openaiTtsVoice);
         }
 
         if (googleApiKey != null && !googleApiKey.isBlank()) {

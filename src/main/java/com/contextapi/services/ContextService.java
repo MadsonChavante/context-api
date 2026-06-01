@@ -23,6 +23,8 @@ import org.springframework.transaction.annotation.Transactional;
 @Transactional
 public class ContextService {
 
+    private static final String CONTEXT_NOT_FOUND = "Context not found with id: %d";
+
     private final ContextRepository contextRepository;
     private final ContextStatsRepository contextStatsRepository;
     private final RaptorDynamic raptorDynamic;
@@ -39,8 +41,7 @@ public class ContextService {
     public ContextDTO findById(Long id) {
         log.debug("Finding context by id: {}", id);
         Context context = contextRepository.findById(id)
-                .orElseThrow(() -> new ResourceNotFoundException(
-                        String.format("Context not found with id: %d", id)));
+                .orElseThrow(() -> new ResourceNotFoundException(CONTEXT_NOT_FOUND.formatted(id)));
         return mapToDTO(context);
     }
 
@@ -73,8 +74,7 @@ public class ContextService {
     public ContextDTO update(Long id, ContextDTO contextDTO) {
         log.debug("Updating context with id: {}", id);
         Context context = contextRepository.findById(id)
-                .orElseThrow(() -> new ResourceNotFoundException(
-                        String.format("Context not found with id: %d", id)));
+                .orElseThrow(() -> new ResourceNotFoundException(CONTEXT_NOT_FOUND.formatted(id)));
 
         String sanitizedContent = sanitizeContent(contextDTO.getContent());
         context.setContent(sanitizedContent);
@@ -92,8 +92,7 @@ public class ContextService {
     public void delete(Long id) {
         log.debug("Deleting context with id: {}", id);
         Context context = contextRepository.findById(id)
-                .orElseThrow(() -> new ResourceNotFoundException(
-                        String.format("Context not found with id: %d", id)));
+                .orElseThrow(() -> new ResourceNotFoundException(CONTEXT_NOT_FOUND.formatted(id)));
         contextRepository.delete(context);
         log.info("Context deleted successfully with id: {}", id);
     }

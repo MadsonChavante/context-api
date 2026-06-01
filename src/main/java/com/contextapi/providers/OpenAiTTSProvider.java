@@ -27,7 +27,7 @@ public class OpenAiTTSProvider implements TextToSpeechProvider {
     public byte[] synthesize(String text) {
         if (!isConfigured()) {
             log.warn("OpenAI TTS not configured, skipping synthesis");
-            return null;
+            return new byte[0];
         }
 
         try {
@@ -56,10 +56,10 @@ public class OpenAiTTSProvider implements TextToSpeechProvider {
             }
 
             log.warn("OpenAI TTS returned no audio content");
-            return null;
+            return new byte[0];
         } catch (Exception e) {
             log.error("Failed to synthesize speech with OpenAI TTS: {}", e.getMessage(), e);
-            return null;
+            return new byte[0];
         }
     }
 

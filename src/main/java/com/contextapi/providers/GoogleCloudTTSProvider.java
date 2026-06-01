@@ -32,7 +32,7 @@ public class GoogleCloudTTSProvider implements TextToSpeechProvider {
     public byte[] synthesize(String text) {
         if (!isConfigured()) {
             log.warn("Google Cloud TTS not configured, skipping synthesis");
-            return null;
+            return new byte[0];
         }
 
         try {
@@ -76,10 +76,10 @@ public class GoogleCloudTTSProvider implements TextToSpeechProvider {
             }
 
             log.warn("Google Cloud TTS returned no audio content");
-            return null;
+            return new byte[0];
         } catch (Exception e) {
             log.error("Failed to synthesize speech with Google Cloud TTS: {}", e.getMessage(), e);
-            return null;
+            return new byte[0];
         }
     }
 

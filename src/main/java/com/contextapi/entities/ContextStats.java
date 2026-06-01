@@ -35,6 +35,6 @@ public class ContextStats {
 
     public void addExercise(int score) {
         this.totalExercises++;
-        this.totalScore += Math.max(0, Math.min(100, score));
+        this.totalScore += Math.clamp(score, 0, 100);
     }
 }

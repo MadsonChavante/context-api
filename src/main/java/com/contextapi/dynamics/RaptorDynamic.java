@@ -29,7 +29,7 @@ public class RaptorDynamic {
     private final AiService aiService;
     private final ContextService contextService;
     private static final Pattern JSON_EXTRACT_PATTERN = Pattern.compile("\\{.*\\}", Pattern.DOTALL);
-    public final String intro = "Opa, vamos praticar! Que ótimo. Bora conversar então." +
+    public static final String intro = "Opa, vamos praticar! Que ótimo. Bora conversar então." +
             "Vou falar uma frase em portugues e quero que voce traduza para o ingles. " +
             "Se tiver duvidas, pode perguntar, ok?";
 
@@ -67,10 +67,7 @@ public class RaptorDynamic {
             String cleanedJson = extractJsonFromResponse(responseAiService);
             JsonNode node = new ObjectMapper().readTree(cleanedJson);
 
-            Long contextId = node.get("contextId").asLong();
-            String response = node.get("response").asText();
-
-            return new ResponseIAResult(contextId, response);
+            return new ResponseIAResult(node.get("contextId").asLong(), node.get("response").asText());
         } catch (Exception e) {
             log.error("Failed to parse JSON response: {}", responseAiService, e);
             throw e;
@@ -78,10 +75,7 @@ public class RaptorDynamic {
     }
 
     public String startVoice(List<ConversationMessage> conversationHistory) {
-        String result = "traduza para o ingles: " + conversationHistory.get(conversationHistory.size() - 1).getContent();
-        // String prompt = buildPrompt(content, conversationHistory);
-        // return aiService.complete(prompt, 800, 0.6);
-        return result;
+        return "traduza para o ingles: " + conversationHistory.get(conversationHistory.size() - 1).getContent();
     }
 
     public HandleAnswerResult handleAnswer(String answer, List<ConversationMessage> conversationHistory) throws Exception{
@@ -113,7 +107,7 @@ public class RaptorDynamic {
                     {"AnswerType": <"ANSWER", "DOUBT" ou "NOISE">, "response": "sua resposta", "nextContextId": <id do contexto escolhido>, "next": "frase natural em portugues baseada no contexto"}
         """);
 
-        String prompt = buildPrompt(content.toString());
+        String prompt = buildPrompt(content.toString(), conversationHistory);
         String responseAiService = aiService.complete(prompt, 800, 0.6);
 
         if (responseAiService == null || responseAiService.trim().isEmpty()) {
@@ -125,11 +119,11 @@ public class RaptorDynamic {
             String cleanedJson = extractJsonFromResponse(responseAiService);
             JsonNode node = new ObjectMapper().readTree(cleanedJson);
 
-            String AnswerType = node.get("AnswerType").asText();
+            String answerType = node.get("AnswerType").asText();
             String response = node.get("response").asText();
             Long nextContextId = node.get("nextContextId").asLong();
             String next = node.get("next").asText();
-            return new HandleAnswerResult(AnswerType, response, nextContextId, next);
+            return new HandleAnswerResult(answerType, response, nextContextId, next);
         } catch (Exception e) {
             log.error("Failed to parse JSON response: {}", responseAiService, e);
             throw e;

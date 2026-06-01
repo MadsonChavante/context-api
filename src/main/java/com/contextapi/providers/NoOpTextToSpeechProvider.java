@@ -8,7 +8,7 @@ public class NoOpTextToSpeechProvider implements TextToSpeechProvider {
     @Override
     public byte[] synthesize(String text) {
         log.debug("NoOp TTS: would synthesize '{}'", text.length() > 50 ? text.substring(0, 50) + "..." : text);
-        return null;
+        return new byte[0];
     }
 
     @Override

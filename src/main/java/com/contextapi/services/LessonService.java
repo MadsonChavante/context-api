@@ -21,6 +21,8 @@ import java.util.*;
 @Transactional
 public class LessonService {
 
+    private static final String LESSON_NOT_FOUND = "Lesson not found with id: %d";
+
     private final LessonRepository lessonRepository;
     private final ContextRepository contextRepository;
     private final RaptorDynamic raptorDynamic;
@@ -38,18 +40,10 @@ public class LessonService {
         Lesson lesson = lessonRepository.findFirstByStatusOrderByCreatedAtDesc(LessonStatus.IN_PROGRESS)
                 .orElseThrow(() -> new IllegalStateException("No active lesson"));
 
-        String response = raptorDynamic.startVoice(lesson.getConversationHistory());
-
-        // ConversationMessage nextTeacherMessage = new ConversationMessage();
-        // nextTeacherMessage.setAuthor(ConversationAuthor.TEACHER);
-        // nextTeacherMessage.setType(ConversationMessage.MessageType.EXERCISE);
-        // nextTeacherMessage.setContent(response);
-        // lesson.getConversationHistory().add(nextTeacherMessage);
-
-        // lessonRepository.save(lesson);
-        return response;
+        return raptorDynamic.startVoice(lesson.getConversationHistory());
     }
 
+    @SuppressWarnings("unused")
     public LessonDTO create(CreateLessonRequest request) throws Exception {
         List<Context> contexts = contextRepository.findAll();
         if (contexts.isEmpty()) {
@@ -80,8 +74,7 @@ public class LessonService {
 
     public LessonDTO next(Long lessonId, String answer) throws Exception {
         Lesson lesson = lessonRepository.findById(lessonId)
-                .orElseThrow(() -> new ResourceNotFoundException(
-                        String.format("Lesson not found with id: %d", lessonId)));
+                .orElseThrow(() -> new ResourceNotFoundException(LESSON_NOT_FOUND.formatted(lessonId)));
 
         if (lesson.getStatus() == LessonStatus.COMPLETED) {
             throw new IllegalArgumentException("This lesson is already completed");
@@ -116,8 +109,7 @@ public class LessonService {
 
     public LessonDTO finish(Long id) {
         Lesson lesson = lessonRepository.findById(id)
-                .orElseThrow(() -> new ResourceNotFoundException(
-                        String.format("Lesson not found with id: %d", id)));
+                .orElseThrow(() -> new ResourceNotFoundException(LESSON_NOT_FOUND.formatted(id)));
 
         lesson.setStatus(LessonStatus.COMPLETED);
         lesson.setCompletedAt(LocalDateTime.now());
@@ -129,8 +121,7 @@ public class LessonService {
     public LessonDTO findById(Long id) {
         return lessonRepository.findById(id)
                 .map(this::mapToDTO)
-                .orElseThrow(() -> new ResourceNotFoundException(
-                        String.format("Lesson not found with id: %d", id)));
+                .orElseThrow(() -> new ResourceNotFoundException(LESSON_NOT_FOUND.formatted(id)));
     }
 
     @Transactional(readOnly = true)
