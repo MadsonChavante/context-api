@@ -127,9 +127,11 @@ public class VoiceSessionService {
         
         return true;
     }
-    //     byte[] audio = ttsProvider.isConfigured() ? ttsProvider.synthesize(text) : null;
-    //     callback.accept(new SynthesizeResult(audio, text));
-    // }
+
+    public void synthesizeText(String text, Consumer<SynthesizeResult> callback) {
+        byte[] audio = ttsProvider.isConfigured() ? ttsProvider.synthesize(text) : null;
+        callback.accept(new SynthesizeResult(audio, text));
+    }
 
     public void endSession(String sessionId) {
         log.debug("Voice session ended: {}", sessionId);
