@@ -35,7 +35,7 @@ class AiServiceTest {
             when(aiProvider.isConfigured()).thenReturn(false);
             AiService service = buildService();
 
-            String result = service.analyze("some content");
+            String result = service.analyze("Analyze this content: %s", "some content");
 
             assertNull(result);
             verify(aiProvider).isConfigured();
@@ -55,7 +55,7 @@ class AiServiceTest {
                     .thenReturn("Resumo da IA");
             AiService service = buildService();
 
-            String result = service.analyze("how to say hello in English?");
+            String result = service.analyze("Analyze this content: %s", "how to say hello in English?");
 
             assertEquals("Resumo da IA", result);
             verify(aiProvider).isConfigured();
@@ -70,7 +70,7 @@ class AiServiceTest {
                     .thenReturn("Resposta");
             AiService service = buildService();
 
-            String result = service.analyze("content with\n\nmultiple\n\n\nlinebreaks");
+            String result = service.analyze("Analyze this content: %s", "content with\n\nmultiple\n\n\nlinebreaks");
 
             assertNotNull(result);
             verify(aiProvider).complete(anyString(), anyInt(), anyDouble());
@@ -85,7 +85,7 @@ class AiServiceTest {
             AiService service = buildService();
             String longContent = "a".repeat(2000);
 
-            String result = service.analyze(longContent);
+            String result = service.analyze("Analyze this content: %s", longContent);
 
             assertNotNull(result);
             verify(aiProvider).complete(anyString(), anyInt(), anyDouble());

@@ -167,8 +167,8 @@ class LessonServiceTest {
         @DisplayName("should process answer and add conversation messages")
         void shouldProcessAnswer() throws Exception {
             when(lessonRepository.findById(1L)).thenReturn(Optional.of(lesson));
-            when(raptorDynamic.handleAnswer("Hello"))
-                    .thenReturn(new HandleAnswerResult("ANSWER", "Muito bem!"));
+            when(raptorDynamic.handleAnswer("Hello", lesson.getConversationHistory()))
+                    .thenReturn(new HandleAnswerResult("ANSWER", "Muito bem!", null, null));
             when(lessonRepository.save(any(Lesson.class))).thenReturn(lesson);
 
             LessonDTO result = lessonService.next(1L, "Hello");
@@ -177,7 +177,7 @@ class LessonServiceTest {
 
             List<ConversationMessage> history = result.getConversationHistory();
             assertNotNull(history);
-            assertEquals(2, history.size());
+            assertEquals(3, history.size());
 
             assertEquals(ConversationAuthor.STUDENT, history.get(0).getAuthor());
             assertEquals(ConversationMessage.MessageType.ANSWER, history.get(0).getType());
@@ -187,6 +187,9 @@ class LessonServiceTest {
             assertEquals(ConversationMessage.MessageType.EXERCISE, history.get(1).getType());
             assertEquals("Muito bem!", history.get(1).getContent());
 
+            assertEquals(ConversationAuthor.TEACHER, history.get(2).getAuthor());
+            assertEquals(ConversationMessage.MessageType.EXERCISE, history.get(2).getType());
+
             verify(lessonRepository).save(any(Lesson.class));
         }
 
@@ -194,8 +197,8 @@ class LessonServiceTest {
         @DisplayName("should process doubt and add feedback message")
         void shouldProcessDoubt() throws Exception {
             when(lessonRepository.findById(1L)).thenReturn(Optional.of(lesson));
-            when(raptorDynamic.handleAnswer("como se diz?"))
-                    .thenReturn(new HandleAnswerResult("DOUBT", "A frase seria..."));
+            when(raptorDynamic.handleAnswer("como se diz?", lesson.getConversationHistory()))
+                    .thenReturn(new HandleAnswerResult("DOUBT", "A frase seria...", null, null));
             when(lessonRepository.save(any(Lesson.class))).thenReturn(lesson);
 
             LessonDTO result = lessonService.next(1L, "como se diz?");
@@ -203,11 +206,16 @@ class LessonServiceTest {
             assertNotNull(result);
 
             List<ConversationMessage> history = result.getConversationHistory();
+            assertEquals(3, history.size());
+            
             assertEquals(ConversationAuthor.STUDENT, history.get(0).getAuthor());
             assertEquals(ConversationMessage.MessageType.DOUBT, history.get(0).getType());
 
             assertEquals(ConversationAuthor.TEACHER, history.get(1).getAuthor());
             assertEquals(ConversationMessage.MessageType.FEEDBACK, history.get(1).getType());
+            
+            assertEquals(ConversationAuthor.TEACHER, history.get(2).getAuthor());
+            assertEquals(ConversationMessage.MessageType.EXERCISE, history.get(2).getType());
             assertEquals("A frase seria...", history.get(1).getContent());
 
             verify(lessonRepository).save(any(Lesson.class));
