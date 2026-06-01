@@ -25,16 +25,20 @@ public class LessonService {
 
     private final LessonRepository lessonRepository;
     private final ContextRepository contextRepository;
+    private final ContextStatsRepository contextStatsRepository;
     private final RaptorDynamic raptorDynamic;
 
     public LessonService(
             LessonRepository lessonRepository,
             ContextRepository contextRepository,
+            ContextStatsRepository contextStatsRepository,
             RaptorDynamic raptorDynamic) {
         this.lessonRepository = lessonRepository;
         this.contextRepository = contextRepository;
+        this.contextStatsRepository = contextStatsRepository;
         this.raptorDynamic = raptorDynamic;
     }
+
 
     public String startVoice() {
         Lesson lesson = lessonRepository.findFirstByStatusOrderByCreatedAtDesc(LessonStatus.IN_PROGRESS)
@@ -101,6 +105,25 @@ public class LessonService {
         nextTeacherMessage.setContextId(handleAnswerResult.nextContextId());
         nextTeacherMessage.setContent(handleAnswerResult.next());
         lesson.getConversationHistory().add(nextTeacherMessage);
+
+        if ("ANSWER".equals(handleAnswerResult.AnswerType())) {
+            Context context = contextRepository.findById(handleAnswerResult.nextContextId())
+                    .orElseThrow(() -> new ResourceNotFoundException(
+                            "Context not found with id: " + handleAnswerResult.nextContextId()));
+            
+            ContextStats stats = contextStatsRepository.findByContextId(context.getId())
+                    .orElse(new ContextStats());
+            
+            if (stats.getId() == null) {
+                stats.setContext(context);
+            }
+            
+            stats.addExercise(handleAnswerResult.score());
+            contextStatsRepository.save(stats);
+            
+            log.info("Updated stats for context {}: totalExercises={}, totalScore={}, average={}", 
+                    context.getId(), stats.getTotalExercises(), stats.getTotalScore(), stats.getAverageScore());
+        }
 
         lessonRepository.save(lesson);
         return mapToDTO(lesson);

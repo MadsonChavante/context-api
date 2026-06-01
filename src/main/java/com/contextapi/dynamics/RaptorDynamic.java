@@ -84,7 +84,7 @@ public class RaptorDynamic {
                     Considere RUIDO quando a resposta nao tiver relacao com o contexto da aula e nao for uma duvida legitima
                     (ex: sons, palavras aleatorias, frases sem sentido, silencio transcrito).
 
-                    Se for ANSWER, avalie se a resposta esta correta.
+                    Se for ANSWER, avalie se a resposta esta correta e de uma pontuacao de 0 a 100.
                     Se for DOUBT, responda a duvida de forma clara e objetiva, sem rodeios, focando na duvida do aluno, sem aprofundar muito e sem continuar a conversa.
                     Se for NOISE, o campo "response" deve ser uma instrucao curta pedindo para o aluno repetir (ex: "Nao entendi, pode repetir?").
 
@@ -100,7 +100,7 @@ public class RaptorDynamic {
                     - NAO "pense em voz alta". Sua unica saida deve ser o JSON abaixo.
 
                     Exemplo de saida esperada (siga exatamente este formato):
-                    {"AnswerType": <"ANSWER", "DOUBT" ou "NOISE">, "response": "sua resposta", "nextContextId": <id do contexto escolhido>, "next": "frase natural em portugues baseada no contexto"}
+                    {"AnswerType": <"ANSWER", "DOUBT" ou "NOISE">, "response": "sua resposta", "nextContextId": <id do contexto escolhido>, "next": "frase natural em portugues baseada no contexto", "score": <pontuacao de 0 a 100, apenas se AnswerType for ANSWER, caso contrario 0>}
         """);
 
         String prompt = buildPrompt(content.toString(), conversationHistory);
@@ -119,7 +119,8 @@ public class RaptorDynamic {
             String response = node.get("response").asText();
             Long nextContextId = node.get("nextContextId").asLong();
             String next = node.get("next").asText();
-            return new HandleAnswerResult(answerType, response, nextContextId, next);
+            int score = node.has("score") ? node.get("score").asInt(0) : 0;
+            return new HandleAnswerResult(answerType, response, nextContextId, next, score);
         } catch (Exception e) {
             log.error("Failed to parse JSON response: {}", responseAiService, e);
             throw new AiServiceException("Failed to parse AI response JSON", e);

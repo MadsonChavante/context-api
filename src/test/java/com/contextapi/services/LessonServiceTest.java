@@ -30,6 +30,7 @@ class LessonServiceTest {
 
     @Mock private LessonRepository lessonRepository;
     @Mock private ContextRepository contextRepository;
+    @Mock private ContextStatsRepository contextStatsRepository;
     @Mock private RaptorDynamic raptorDynamic;
 
     @InjectMocks
@@ -165,9 +166,14 @@ class LessonServiceTest {
         @Test
         @DisplayName("should process answer and add conversation messages")
         void shouldProcessAnswer() throws Exception {
+            Context mockContext = new Context();
+            mockContext.setId(1L);
+            
             when(lessonRepository.findById(1L)).thenReturn(Optional.of(lesson));
             when(raptorDynamic.handleAnswer("Hello", lesson.getConversationHistory()))
-                    .thenReturn(new HandleAnswerResult("ANSWER", "Muito bem!", null, null));
+                    .thenReturn(new HandleAnswerResult("ANSWER", "Muito bem!", 1L, "Next exercise", 85));
+            when(contextRepository.findById(1L)).thenReturn(Optional.of(mockContext));
+            when(contextStatsRepository.findByContextId(1L)).thenReturn(Optional.empty());
             when(lessonRepository.save(any(Lesson.class))).thenReturn(lesson);
 
             LessonDTO result = lessonService.next(1L, "Hello");
@@ -197,7 +203,7 @@ class LessonServiceTest {
         void shouldProcessDoubt() throws Exception {
             when(lessonRepository.findById(1L)).thenReturn(Optional.of(lesson));
             when(raptorDynamic.handleAnswer("como se diz?", lesson.getConversationHistory()))
-                    .thenReturn(new HandleAnswerResult("DOUBT", "A frase seria...", null, null));
+                    .thenReturn(new HandleAnswerResult("DOUBT", "A frase seria...", 1L, "Next exercise", 0));
             when(lessonRepository.save(any(Lesson.class))).thenReturn(lesson);
 
             LessonDTO result = lessonService.next(1L, "como se diz?");
