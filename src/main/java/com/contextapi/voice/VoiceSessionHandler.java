@@ -22,11 +22,13 @@ public class VoiceSessionHandler extends BinaryWebSocketHandler {
     private static final int MIN_AUDIO_BYTES = 8000;  // ~500ms of audio at 16kHz
     private static final double VAD_ENERGY_THRESHOLD = 300.0;
 
+    private static final String JSON_TRANSCRIPT_PREFIX = "{\"type\":\"transcript\",\"text\":\"";
+
     private final Map<String, ByteArrayOutputStream> sessionBuffers = new ConcurrentHashMap<>();
     private final VoiceSessionService voiceSessionService;
 
-    
     private final ExecutorService voiceExecutor = Executors.newCachedThreadPool();
+    private static final String JSON_RESPONSE_PREFIX = "{\"type\":\"response\",\"text\":\"";
 
     public VoiceSessionHandler(VoiceSessionService voiceSessionService) {
         this.voiceSessionService = voiceSessionService;
@@ -38,14 +40,13 @@ public class VoiceSessionHandler extends BinaryWebSocketHandler {
         sessionBuffers.put(session.getId(), new ByteArrayOutputStream());
 
         
-        CompletableFuture.runAsync(() -> {
+        CompletableFuture.runAsync(() ->
             voiceSessionService.startSession(result -> {
-                sendTextMessage(session, "{\"type\":\"response\",\"text\":\"" + escapeJson(result.greetingText()) + "\"}");
+                sendTextMessage(session, JSON_RESPONSE_PREFIX + escapeJson(result.greetingText()) + "\"}");
                 if (result.audio() != null) {
                     sendBinaryMessage(session, result.audio());
                 }
-            });
-        }, voiceExecutor);
+            }), voiceExecutor);
     }
 
     @Override
@@ -54,18 +55,16 @@ public class VoiceSessionHandler extends BinaryWebSocketHandler {
         log.debug("Text message from session {}: {}", session.getId(), payload);
 
         try {
-            
             if (payload.contains("\"type\":\"speak\"") || payload.contains("\"type\":\"next\"")) {
                 String text = extractJsonValue(payload, "text");
-                
-                CompletableFuture.runAsync(() -> {
+
+                CompletableFuture.runAsync(() ->
                     voiceSessionService.synthesizeText(text, result -> {
-                        sendTextMessage(session, "{\"type\":\"response\",\"text\":\"" + escapeJson(result.text()) + "\"}");
+                        sendTextMessage(session, JSON_RESPONSE_PREFIX + escapeJson(result.text()) + "\"}");
                         if (result.audio() != null) {
                             sendBinaryMessage(session, result.audio());
                         }
-                    });
-                }, voiceExecutor);
+                    }), voiceExecutor);
             }
         } catch (Exception e) {
             log.error("Failed to handle text message: {}", e.getMessage());
@@ -129,35 +128,35 @@ public class VoiceSessionHandler extends BinaryWebSocketHandler {
 
         log.debug("Processing audio from session {}: {} bytes", session.getId(), audioData.length);
 
-        
-        CompletableFuture.runAsync(() -> {
+        CompletableFuture.runAsync(() ->
             voiceSessionService.processVoiceInput(session.getId(), audioData,
-                
-                transcript -> {
-                    sendTextMessage(session, "{\"type\":\"transcript\",\"text\":\"" + escapeJson(transcript) + "\"}");
-                },
-                
-                result -> {
-                    if (!result.responseText().isBlank()) {
-                        log.debug("Sending response to session {}: {}", session.getId(), result.responseText());
-                        sendTextMessage(session, "{\"type\":\"response\",\"text\":\"" + escapeJson(result.responseText()) + "\"}");
-                        
-                        // Send audio after a small delay to ensure message is processed
-                        if (result.audio() != null) {
-                            try {
-                                Thread.sleep(100); // 100ms delay between text and audio
-                            } catch (InterruptedException e) {
-                                Thread.currentThread().interrupt();
-                            }
-                            sendBinaryMessage(session, result.audio());
-                        }
-                    }
-                    if (result.transcript().isBlank() && result.responseText().isBlank()) {
-                        sendTextMessage(session, "{\"type\":\"error\",\"message\":\"Rate limit do STT atingido. Tente novamente em instantes.\"}");
-                    }
-                }
-            );
-        }, voiceExecutor);
+                transcript -> sendTextMessage(session,
+                        JSON_TRANSCRIPT_PREFIX + escapeJson(transcript) + "\"}"),
+                result -> handleProcessResult(session, result)
+            ), voiceExecutor);
+    }
+
+    private void handleProcessResult(WebSocketSession session, VoiceSessionService.ProcessResult result) {
+        if (!result.responseText().isBlank()) {
+            log.debug("Sending response to session {}: {}", session.getId(), result.responseText());
+            sendTextMessage(session, JSON_RESPONSE_PREFIX + escapeJson(result.responseText()) + "\"}");
+
+            if (result.audio() != null) {
+                sleepSafely(100);
+                sendBinaryMessage(session, result.audio());
+            }
+        }
+        if (result.transcript().isBlank() && result.responseText().isBlank()) {
+            sendTextMessage(session, "{\"type\":\"error\",\"message\":\"Rate limit do STT atingido. Tente novamente em instantes.\"}");
+        }
+    }
+
+    private static void sleepSafely(long millis) {
+        try {
+            Thread.sleep(millis);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
     }
 
     /**

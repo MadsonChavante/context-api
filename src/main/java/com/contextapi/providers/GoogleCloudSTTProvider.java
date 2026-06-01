@@ -44,19 +44,7 @@ public class GoogleCloudSTTProvider implements SpeechToTextProvider {
         try {
             String base64Audio = Base64.getEncoder().encodeToString(audioData);
 
-            Map<String, Object> config = Map.of(
-                    "encoding", encoding,
-                    "languageCode", languageCode,
-                    "model", "default",
-                    "enableAutomaticPunctuation", true
-            );
-
-            Map<String, Object> audio = Map.of("content", base64Audio);
-
-            Map<String, Object> requestBody = Map.of(
-                    "config", config,
-                    "audio", audio
-            );
+            Map<String, Object> requestBody = buildSttRequestBody(base64Audio);
 
             Map<?, ?> response = webClient.post()
                     .uri(STT_ENDPOINT + "?key=" + apiKey)
@@ -69,28 +57,48 @@ public class GoogleCloudSTTProvider implements SpeechToTextProvider {
                     })
                     .block();
 
-            if (response != null && response.containsKey("results")) {
-                List<?> results = (List<?>) response.get("results");
-                if (results != null && !results.isEmpty()) {
-                    Map<?, ?> firstResult = (Map<?, ?>) results.get(0);
-                    List<?> alternatives = (List<?>) firstResult.get("alternatives");
-                    if (alternatives != null && !alternatives.isEmpty()) {
-                        Map<?, ?> bestAlternative = (Map<?, ?>) alternatives.get(0);
-                        String transcript = (String) bestAlternative.get("transcript");
-                        if (transcript != null && !transcript.isBlank()) {
-                            log.debug("STT transcript: {}", transcript);
-                            return transcript;
-                        }
-                    }
-                }
-            }
-
-            log.warn("Google Cloud STT returned no results");
-            return null;
+            return extractTranscript(response);
         } catch (Exception e) {
             log.error("Failed to transcribe audio with Google Cloud STT: {}", e.getMessage(), e);
             return null;
         }
+    }
+
+    private Map<String, Object> buildSttRequestBody(String base64Audio) {
+        Map<String, Object> config = Map.of(
+                "encoding", encoding,
+                "languageCode", languageCode,
+                "model", "default",
+                "enableAutomaticPunctuation", true
+        );
+        Map<String, Object> audio = Map.of("content", base64Audio);
+        return Map.of("config", config, "audio", audio);
+    }
+
+    private String extractTranscript(Map<?, ?> response) {
+        if (response == null || !response.containsKey("results")) {
+            log.warn("Google Cloud STT returned no results");
+            return null;
+        }
+
+        List<?> results = (List<?>) response.get("results");
+        if (results == null || results.isEmpty()) {
+            return null;
+        }
+
+        Map<?, ?> firstResult = (Map<?, ?>) results.get(0);
+        List<?> alternatives = (List<?>) firstResult.get("alternatives");
+        if (alternatives == null || alternatives.isEmpty()) {
+            return null;
+        }
+
+        Map<?, ?> bestAlternative = (Map<?, ?>) alternatives.get(0);
+        String transcript = (String) bestAlternative.get("transcript");
+        if (transcript != null && !transcript.isBlank()) {
+            log.debug("STT transcript: {}", transcript);
+            return transcript;
+        }
+        return null;
     }
 
     @Override

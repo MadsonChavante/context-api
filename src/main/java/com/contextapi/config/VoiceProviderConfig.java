@@ -54,9 +54,7 @@ public class VoiceProviderConfig {
     public SpeechToTextProvider speechToTextProvider(WebClient webClient) {
         if ("openai".equalsIgnoreCase(sttProvider) && openaiApiKey != null && !openaiApiKey.isBlank()) {
             return new OpenAiSTTProvider(webClient, openaiApiKey, openaiSttModel, openaiSttLanguage);
-        }
-
-        if (googleApiKey != null && !googleApiKey.isBlank()) {
+        } else if (googleApiKey != null && !googleApiKey.isBlank()) {
             return new GoogleCloudSTTProvider(webClient, googleApiKey, sttLanguage, sttEncoding);
         }
 
@@ -67,9 +65,7 @@ public class VoiceProviderConfig {
     public TextToSpeechProvider textToSpeechProvider(WebClient webClient) {
         if ("openai".equalsIgnoreCase(ttsProvider) && openaiApiKey != null && !openaiApiKey.isBlank()) {
             return new OpenAiTTSProvider(webClient, openaiApiKey, openaiTtsModel, openaiTtsVoice);
-        }
-
-        if (googleApiKey != null && !googleApiKey.isBlank()) {
+        } else if (googleApiKey != null && !googleApiKey.isBlank()) {
             return new GoogleCloudTTSProvider(webClient, googleApiKey, ttsLanguage, ttsVoice, speakingRate);
         }
 

@@ -43,8 +43,7 @@ public class LessonService {
         return raptorDynamic.startVoice(lesson.getConversationHistory());
     }
 
-    @SuppressWarnings("unused")
-    public LessonDTO create(CreateLessonRequest request) throws Exception {
+    public LessonDTO create() throws Exception {
         List<Context> contexts = contextRepository.findAll();
         if (contexts.isEmpty()) {
             throw new IllegalArgumentException("Create at least one context before starting a lesson");
@@ -55,7 +54,7 @@ public class LessonService {
         ConversationMessage conversationMessage = new ConversationMessage();
         conversationMessage.setAuthor(ConversationAuthor.TEACHER);
         conversationMessage.setType(ConversationMessage.MessageType.GREETING);
-        conversationMessage.setContent(raptorDynamic.intro);
+        conversationMessage.setContent(raptorDynamic.INTRO);
         lesson.getConversationHistory().add(conversationMessage);
 
         ResponseIAResult result = raptorDynamic.startLesson();

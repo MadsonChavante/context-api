@@ -22,7 +22,7 @@ public class LessonController {
     @PostMapping
     public ResponseEntity<LessonDTO> create(@RequestBody(required = false) CreateLessonRequest request) throws Exception {
         log.debug("POST request to create lesson");
-        return ResponseEntity.status(HttpStatus.CREATED).body(lessonService.create(request));
+        return ResponseEntity.status(HttpStatus.CREATED).body(lessonService.create());
     }
 
     @GetMapping("/active")

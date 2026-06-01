@@ -29,7 +29,6 @@ import static org.mockito.Mockito.*;
 class LessonServiceTest {
 
     @Mock private LessonRepository lessonRepository;
-    @Mock private ContextStatsRepository contextStatsRepository;
     @Mock private ContextRepository contextRepository;
     @Mock private RaptorDynamic raptorDynamic;
 
@@ -61,7 +60,7 @@ class LessonServiceTest {
             when(contextRepository.findAll()).thenReturn(List.of());
 
             assertThrows(IllegalArgumentException.class,
-                    () -> lessonService.create(new CreateLessonRequest()));
+                    () -> lessonService.create());
         }
 
         @Test
@@ -76,7 +75,7 @@ class LessonServiceTest {
                 return l;
             });
 
-            LessonDTO result = lessonService.create(new CreateLessonRequest());
+            LessonDTO result = lessonService.create();
 
             assertNotNull(result);
             assertEquals(1L, result.getId());

@@ -6,6 +6,7 @@ import com.contextapi.dtos.LessonDTO;
 import com.contextapi.entities.Context;
 import com.contextapi.entities.ContextStats;
 import com.contextapi.enums.ConversationAuthor;
+import com.contextapi.exceptions.AiServiceException;
 import com.contextapi.records.ClassificationResult;
 import com.contextapi.records.EvaluationResult;
 import com.contextapi.records.HandleAnswerResult;
@@ -29,7 +30,7 @@ public class RaptorDynamic {
     private final AiService aiService;
     private final ContextService contextService;
     private static final Pattern JSON_EXTRACT_PATTERN = Pattern.compile("\\{.*\\}", Pattern.DOTALL);
-    public static final String intro = "Opa, vamos praticar! Que ótimo. Bora conversar então." +
+    public static final String INTRO = "Opa, vamos praticar! Que ótimo. Bora conversar então." +
             "Vou falar uma frase em portugues e quero que voce traduza para o ingles. " +
             "Se tiver duvidas, pode perguntar, ok?";
 
@@ -60,7 +61,7 @@ public class RaptorDynamic {
 
         if (responseAiService == null || responseAiService.trim().isEmpty()) {
             log.error("AI service returned null or empty response");
-            throw new RuntimeException("Failed to get response from AI service");
+            throw new AiServiceException("Failed to get response from AI service");
         }
 
         try {
@@ -70,7 +71,7 @@ public class RaptorDynamic {
             return new ResponseIAResult(node.get("contextId").asLong(), node.get("response").asText());
         } catch (Exception e) {
             log.error("Failed to parse JSON response: {}", responseAiService, e);
-            throw e;
+            throw new AiServiceException("Failed to parse AI response JSON", e);
         }
     }
 
@@ -112,7 +113,7 @@ public class RaptorDynamic {
 
         if (responseAiService == null || responseAiService.trim().isEmpty()) {
             log.error("AI service returned null or empty response for answer: {}", answer);
-            throw new RuntimeException("Failed to get response from AI service");
+            throw new AiServiceException("Failed to get response from AI service");
         }
 
         try {
@@ -126,7 +127,7 @@ public class RaptorDynamic {
             return new HandleAnswerResult(answerType, response, nextContextId, next);
         } catch (Exception e) {
             log.error("Failed to parse JSON response: {}", responseAiService, e);
-            throw e;
+            throw new AiServiceException("Failed to parse AI response JSON", e);
         }
     }
 
@@ -161,7 +162,7 @@ public class RaptorDynamic {
             int count = contextStats != null ? contextStats.getTotalExercises() : 0;
             double avg = contextStats != null ? contextStats.getAverageScore() : 0;
             String level = count == 0 ? "NAO PRATICADO (prioridade maxima)"
-                    : avg >= 80 ? "dominado" : avg >= 50 ? "em progresso" : "PRECISA PRATICAR";
+                    : determineLevel(avg);
             contextSummary.append("- [id=").append(context.getId()).append("] ")
                     .append(context.getContent())
                     .append(" | ex: ").append(count)
@@ -201,19 +202,32 @@ public class RaptorDynamic {
     }
 
     public String analyze(String content) {
-        String prompt = "Voce e um assistente de aprendizado de ingles descontraido e direto ao ponto.\n\n"
-            + "O usuario quer aprender ingles ou tirar duvidas com base neste contexto:\n"
-            + "\"%s\"\n\n"
-            + "Responda em no maximo 2-3 linhas, em portugues, dizendo apenas o que entendeu do contexto.\n\n"
-            + "Regras:\n"
-            + "- Apenas diga o que entendeu do contexto, sem explicar ou aprofundar\n"
-            + "- Mantenha o foco em ingles com base no contexto do usuario\n"
-            + "- Nao fuja do tema\n"
-            + "- Nao faca perguntas nem convide para continuar a conversa\n"
-            + "- Se houver termos em ingles faca a traducao de forma natural para portugues na resposta\n"
-            + "- Se houver termos em portugues faca a traducao de forma natural para ingles na resposta\n"
-            + "- Nada de saudacoes ou introducoes";
+        String prompt = """
+                Voce e um assistente de aprendizado de ingles descontraido e direto ao ponto.
+
+                O usuario quer aprender ingles ou tirar duvidas com base neste contexto:
+                "%s"
+
+                Responda em no maximo 2-3 linhas, em portugues, dizendo apenas o que entendeu do contexto.
+
+                Regras:
+                - Apenas diga o que entendeu do contexto, sem explicar ou aprofundar
+                - Mantenha o foco em ingles com base no contexto do usuario
+                - Nao fuja do tema
+                - Nao faca perguntas nem convide para continuar a conversa
+                - Se houver termos em ingles faca a traducao de forma natural para portugues na resposta
+                - Se houver termos em portugues faca a traducao de forma natural para ingles na resposta
+                - Nada de saudacoes ou introducoes""";
         return aiService.analyze(prompt, content);
+    }
+
+    private static String determineLevel(double avg) {
+        if (avg >= 80) {
+            return "dominado";
+        } else if (avg >= 50) {
+            return "em progresso";
+        }
+        return "PRECISA PRATICAR";
     }
 
     /**

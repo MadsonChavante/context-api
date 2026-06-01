@@ -126,9 +126,7 @@ public class ContextService {
     }
 
     public ContextStats getContextStats(Long contextId) {
-        return contextStatsRepository.findByContextId(contextId).orElseGet(() -> {
-            ContextStats contextStats = new ContextStats();
-            return contextStats;
-        });
+        return contextStatsRepository.findByContextId(contextId)
+                .orElseGet(ContextStats::new);
     }
 }
