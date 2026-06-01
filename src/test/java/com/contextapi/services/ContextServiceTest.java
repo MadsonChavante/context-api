@@ -1,9 +1,11 @@
 package com.contextapi.services;
 
 import com.contextapi.dtos.ContextDTO;
+import com.contextapi.dynamics.RaptorDynamic;
 import com.contextapi.entities.Context;
 import com.contextapi.exceptions.ResourceNotFoundException;
 import com.contextapi.repositories.ContextRepository;
+import com.contextapi.repositories.ContextStatsRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -32,7 +34,10 @@ class ContextServiceTest {
     private ContextRepository contextRepository;
 
     @Mock
-    private AiService aiService;
+    private ContextStatsRepository contextStatsRepository;
+
+    @Mock
+    private RaptorDynamic raptorDynamic;
 
     @InjectMocks
     private ContextService contextService;
@@ -127,9 +132,9 @@ class ContextServiceTest {
             savedWithAi.setAiAnalysis("Resumo gerado pela IA");
 
             when(contextRepository.save(any(Context.class)))
-                    .thenReturn(context)          // 1st save — persists entity
-                    .thenReturn(savedWithAi);     // 2nd save — persists AI analysis
-            when(aiService.analyze("Test content")).thenReturn("Resumo gerado pela IA");
+                    .thenReturn(context)
+                    .thenReturn(savedWithAi);
+            when(raptorDynamic.analyze("Test content")).thenReturn("Resumo gerado pela IA");
 
             ContextDTO result = contextService.create(contextDTO);
 
@@ -137,31 +142,31 @@ class ContextServiceTest {
             assertEquals("Test content", result.getContent());
             assertEquals("Resumo gerado pela IA", result.getAiAnalysis());
             verify(contextRepository, times(2)).save(any(Context.class));
-            verify(aiService).analyze("Test content");
+            verify(raptorDynamic).analyze("Test content");
         }
 
         @Test
         @DisplayName("should persist context and return null AI analysis when AI service returns null")
         void shouldReturnNullAiAnalysisWhenAiServiceReturnsNull() {
             when(contextRepository.save(any(Context.class))).thenReturn(context);
-            when(aiService.analyze(any())).thenReturn(null);
+            when(raptorDynamic.analyze(any())).thenReturn(null);
 
             ContextDTO result = contextService.create(contextDTO);
 
             assertNotNull(result);
             assertNull(result.getAiAnalysis());
-            verify(aiService).analyze("Test content");
+            verify(raptorDynamic).analyze("Test content");
         }
 
         @Test
         @DisplayName("should call aiService with the saved content")
         void shouldCallAiServiceWithSavedContent() {
             when(contextRepository.save(any(Context.class))).thenReturn(context);
-            when(aiService.analyze(any())).thenReturn(null);
+            when(raptorDynamic.analyze(any())).thenReturn(null);
 
             contextService.create(contextDTO);
 
-            verify(aiService).analyze("Test content");
+            verify(raptorDynamic).analyze("Test content");
         }
     }
 
@@ -187,9 +192,9 @@ class ContextServiceTest {
 
             when(contextRepository.findById(1L)).thenReturn(Optional.of(context));
             when(contextRepository.save(any(Context.class)))
-                    .thenReturn(updated)        // 1st save — clears aiAnalysis
-                    .thenReturn(updatedWithAi); // 2nd save — persists new analysis
-            when(aiService.analyze("Updated content")).thenReturn("Nova análise");
+                    .thenReturn(updated)
+                    .thenReturn(updatedWithAi);
+            when(raptorDynamic.analyze("Updated content")).thenReturn("Nova análise");
 
             ContextDTO result = contextService.update(1L, updateDTO);
 
@@ -198,7 +203,7 @@ class ContextServiceTest {
             assertEquals("Nova análise", result.getAiAnalysis());
             verify(contextRepository).findById(1L);
             verify(contextRepository, times(2)).save(any(Context.class));
-            verify(aiService).analyze("Updated content");
+            verify(raptorDynamic).analyze("Updated content");
         }
 
         @Test
@@ -210,13 +215,12 @@ class ContextServiceTest {
 
             when(contextRepository.findById(1L)).thenReturn(Optional.of(context));
             when(contextRepository.save(any(Context.class))).thenReturn(context);
-            when(aiService.analyze(any())).thenReturn(null);
+            when(raptorDynamic.analyze(any())).thenReturn(null);
 
             contextService.update(1L, updateDTO);
 
-            // aiAnalysis must be null before the first save
             verify(contextRepository, times(2)).save(argThat(c -> c.getAiAnalysis() == null || c.getAiAnalysis() != null));
-            verify(aiService).analyze("New content");
+            verify(raptorDynamic).analyze("New content");
         }
 
         @Test
@@ -226,7 +230,7 @@ class ContextServiceTest {
 
             assertThrows(ResourceNotFoundException.class, () -> contextService.update(999L, contextDTO));
             verify(contextRepository).findById(999L);
-            verifyNoInteractions(aiService);
+            verifyNoInteractions(raptorDynamic);
         }
     }
 

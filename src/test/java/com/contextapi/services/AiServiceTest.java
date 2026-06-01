@@ -1,19 +1,16 @@
 package com.contextapi.services;
 
+import com.contextapi.providers.AiProvider;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.web.reactive.function.client.WebClient;
-import reactor.core.publisher.Mono;
-
-import java.util.List;
-import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyDouble;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.*;
 
@@ -21,65 +18,28 @@ import static org.mockito.Mockito.*;
 @DisplayName("AiService")
 class AiServiceTest {
 
-    private static final String VALID_KEY = "valid-key";
-    private static final String MODEL     = "llama-3.1-8b-instant";
+    @Mock
+    private AiProvider aiProvider;
 
-    @Mock private WebClient                       webClient;
-    @Mock private WebClient.RequestBodyUriSpec    uriSpec;
-    @Mock private WebClient.RequestBodySpec       bodySpec;
-    @SuppressWarnings("rawtypes")
-    @Mock private WebClient.RequestHeadersSpec    headersSpec;
-    @Mock private WebClient.ResponseSpec          responseSpec;
-
-    private AiService buildService(String apiKey) {
-        return new AiService(webClient, apiKey, MODEL);
-    }
-
-    private void stubWebClientReturning(Map<String, Object> response) {
-        lenient().when(webClient.post()).thenReturn(uriSpec);
-        lenient().when(uriSpec.header(anyString(), anyString())).thenReturn(bodySpec);
-        lenient().when(bodySpec.bodyValue(any())).thenReturn(headersSpec);
-        lenient().when(headersSpec.retrieve()).thenReturn(responseSpec);
-        lenient().when(responseSpec.bodyToMono(Map.class)).thenReturn(Mono.just(response));
-    }
-
-    @SuppressWarnings("unchecked")
-    private void stubWebClientThrowing(RuntimeException ex) {
-        lenient().when(webClient.post()).thenReturn(uriSpec);
-        lenient().when(uriSpec.header(anyString(), anyString())).thenReturn(bodySpec);
-        lenient().when(bodySpec.bodyValue(any())).thenReturn(headersSpec);
-        lenient().when(headersSpec.retrieve()).thenReturn(responseSpec);
-        lenient().when(responseSpec.bodyToMono(Map.class)).thenThrow(ex);
-    }
-
-    private Map<String, Object> groqResponse(String analysisText) {
-        return Map.of("choices", List.of(Map.of("message", Map.of("content", analysisText))));
+    private AiService buildService() {
+        return new AiService(aiProvider);
     }
 
     @Nested
-    @DisplayName("analyze — API key absent")
-    class AnalyzeApiKeyAbsent {
+    @DisplayName("analyze — provider not configured")
+    class AnalyzeProviderNotConfigured {
 
         @Test
-        @DisplayName("should return null and skip HTTP call when api key is blank")
-        void shouldReturnNullWhenApiKeyIsBlank() {
-            AiService service = buildService("");
+        @DisplayName("should return null when provider is not configured")
+        void shouldReturnNullWhenProviderNotConfigured() {
+            when(aiProvider.isConfigured()).thenReturn(false);
+            AiService service = buildService();
 
-            String result = service.analyze("some content");
-
-            assertNull(result);
-            verify(webClient, never()).post();
-        }
-
-        @Test
-        @DisplayName("should return null and skip HTTP call when api key is null")
-        void shouldReturnNullWhenApiKeyIsNull() {
-            AiService service = buildService(null);
-
-            String result = service.analyze("some content");
+            String result = service.analyze("Analyze this content: %s", "some content");
 
             assertNull(result);
-            verify(webClient, never()).post();
+            verify(aiProvider).isConfigured();
+            verify(aiProvider, never()).complete(anyString(), anyInt(), anyDouble());
         }
     }
 
@@ -90,50 +50,101 @@ class AiServiceTest {
         @Test
         @DisplayName("should return the AI-generated analysis text")
         void shouldReturnAnalysisText() {
-            stubWebClientReturning(groqResponse("Resumo da IA"));
-            AiService service = buildService(VALID_KEY);
+            when(aiProvider.isConfigured()).thenReturn(true);
+            when(aiProvider.complete(anyString(), anyInt(), anyDouble()))
+                    .thenReturn("Resumo da IA");
+            AiService service = buildService();
 
-            String result = service.analyze("how to say hello in English?");
+            String result = service.analyze("Analyze this content: %s", "how to say hello in English?");
 
             assertEquals("Resumo da IA", result);
+            verify(aiProvider).isConfigured();
+            verify(aiProvider).complete(anyString(), anyInt(), anyDouble());
         }
 
         @Test
-        @DisplayName("should call webClient.post() when api key is present")
-        void shouldCallPostWhenApiKeyPresent() {
-            stubWebClientReturning(groqResponse("ok"));
-            AiService service = buildService(VALID_KEY);
+        @DisplayName("should sanitize content before sending to provider")
+        void shouldSanitizeContent() {
+            when(aiProvider.isConfigured()).thenReturn(true);
+            when(aiProvider.complete(anyString(), anyInt(), anyDouble()))
+                    .thenReturn("Resposta");
+            AiService service = buildService();
 
-            service.analyze("translate: apple");
+            String result = service.analyze("Analyze this content: %s", "content with\n\nmultiple\n\n\nlinebreaks");
 
-            verify(webClient).post();
+            assertNotNull(result);
+            verify(aiProvider).complete(anyString(), anyInt(), anyDouble());
+        }
+
+        @Test
+        @DisplayName("should truncate content longer than 1000 characters")
+        void shouldTruncateContent() {
+            when(aiProvider.isConfigured()).thenReturn(true);
+            when(aiProvider.complete(anyString(), anyInt(), anyDouble()))
+                    .thenReturn("Resposta");
+            AiService service = buildService();
+            String longContent = "a".repeat(2000);
+
+            String result = service.analyze("Analyze this content: %s", longContent);
+
+            assertNotNull(result);
+            verify(aiProvider).complete(anyString(), anyInt(), anyDouble());
         }
     }
 
     @Nested
-    @DisplayName("analyze — error handling")
-    class AnalyzeErrorHandling {
+    @DisplayName("complete — provider not configured")
+    class CompleteProviderNotConfigured {
 
         @Test
-        @DisplayName("should return null when WebClient throws a runtime exception")
-        void shouldReturnNullOnWebClientException() {
-            stubWebClientThrowing(new RuntimeException("connection refused"));
-            AiService service = buildService(VALID_KEY);
+        @DisplayName("should return null when provider is not configured")
+        void shouldReturnNullWhenProviderNotConfigured() {
+            when(aiProvider.isConfigured()).thenReturn(false);
+            when(aiProvider.getProviderName()).thenReturn("Test Provider");
+            AiService service = buildService();
 
-            String result = service.analyze("some content");
+            String result = service.complete("some prompt", 100, 0.5);
 
             assertNull(result);
+            verify(aiProvider).isConfigured();
+            verify(aiProvider, never()).complete(anyString(), anyInt(), anyDouble());
         }
+    }
+
+    @Nested
+    @DisplayName("complete — successful response")
+    class CompleteSuccess {
 
         @Test
-        @DisplayName("should return null when Groq response has empty choices list")
-        void shouldReturnNullWhenChoicesIsEmpty() {
-            stubWebClientReturning(Map.of("choices", List.of()));
-            AiService service = buildService(VALID_KEY);
+        @DisplayName("should delegate to provider with exact parameters")
+        void shouldDelegateToProvider() {
+            when(aiProvider.isConfigured()).thenReturn(true);
+            when(aiProvider.complete("test prompt", 200, 0.8))
+                    .thenReturn("Provider response");
+            AiService service = buildService();
 
-            String result = service.analyze("content");
+            String result = service.complete("test prompt", 200, 0.8);
 
-            assertNull(result);
+            assertEquals("Provider response", result);
+            verify(aiProvider).complete("test prompt", 200, 0.8);
+        }
+    }
+
+    @Nested
+    @DisplayName("getProviderName")
+    class GetProviderName {
+
+        @Test
+        @DisplayName("should return the provider's name")
+        void shouldReturnProviderName() {
+            when(aiProvider.getProviderName()).thenReturn("Groq");
+            AiService service = buildService();
+
+            String name = service.getProviderName();
+
+            assertEquals("Groq", name);
+            verify(aiProvider).getProviderName();
         }
     }
 }
+

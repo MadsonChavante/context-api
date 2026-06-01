@@ -18,14 +18,11 @@ public class Context {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-        @NotBlank(message = "Content cannot be blank")
+    @NotBlank(message = "Content cannot be blank")
     @Size(min = 1, max = 1000, message = "Content must be between 1 and 1000 characters")
     @Column(nullable = false, columnDefinition = "TEXT")
     private String content;
 
     @Column(columnDefinition = "TEXT")
     private String aiAnalysis;
-
-    @Version
-    private Long version;
 }
