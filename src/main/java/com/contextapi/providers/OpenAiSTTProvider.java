@@ -41,9 +41,6 @@ public class OpenAiSTTProvider implements SpeechToTextProvider {
             return null;
         }
 
-        // ═══ DEBUG: salva o áudio em arquivo antes de enviar ═══
-        saveAudioToFile(audioData, audioFormat != null ? audioFormat : "webm");
-
         try {
             MultipartBodyBuilder bodyBuilder = new MultipartBodyBuilder();
             bodyBuilder.part("file", new ByteArrayResource(audioData) {
@@ -95,23 +92,4 @@ public class OpenAiSTTProvider implements SpeechToTextProvider {
         return "OpenAI STT";
     }
 
-    /**
-     * DEBUG: Salva o áudio enviado para a OpenAI em arquivo.
-     * Desative depois de resolver o problema.
-     */
-    private void saveAudioToFile(byte[] audioData, String extension) {
-        try {
-            Path dir = Paths.get("debug-audio");
-            Files.createDirectories(dir);
-            String timestamp = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss-SSS"));
-            String filename = "stt-input_" + timestamp + "." + extension;
-            Path filePath = dir.resolve(filename);
-            try (FileOutputStream fos = new FileOutputStream(filePath.toFile())) {
-                fos.write(audioData);
-            }
-            log.info("🔊 Audio salvo para debug: {} ({} bytes)", filePath.toAbsolutePath(), audioData.length);
-        } catch (IOException e) {
-            log.error("Falha ao salvar audio para debug", e);
-        }
-    }
 }

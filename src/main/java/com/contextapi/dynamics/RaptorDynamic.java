@@ -90,13 +90,18 @@ public class RaptorDynamic {
         content.append("O aluno respondeu: ").append(answer).append("\n");
         content.append("""
                     Analise a resposta do aluno,
-                    classifique se uma resposta ao pedido de traducao seu ou se e uma duvida.
-                    Se for resposta, avalie se a resposta esta correta, 
-                    Se for duvida, responda a duvida de forma clara e objetiva, sem rodeios, focando na duvida do aluno, sem aprofundar muito e sem continuar a conversa.
+                    classifique se é uma resposta ao pedido de traducao, uma duvida, ou ruido.
+                    Considere RUIDO quando a resposta nao tiver relacao com o contexto da aula e nao for uma duvida legitima
+                    (ex: sons, palavras aleatorias, frases sem sentido, silencio transcrito).
+
+                    Se for ANSWER, avalie se a resposta esta correta.
+                    Se for DOUBT, responda a duvida de forma clara e objetiva, sem rodeios, focando na duvida do aluno, sem aprofundar muito e sem continuar a conversa.
+                    Se for NOISE, o campo "response" deve ser uma instrucao curta pedindo para o aluno repetir (ex: "Nao entendi, pode repetir?").
 
                     para proxima frase escolha o contexto que MAIS PRECISA de pratica (menor media ou nao praticado).
                     Crie uma frase NATURAL e UTIL. Use VARIACOES — mude palavras, tempo verbal, ou situacao.
-                    Se o aluno estiver com dúvida, priorize a mesma frase ou uma variação simples dela, para ajudar o aluno a aprender.
+                    Se o aluno estiver com duvida, priorize a mesma frase ou uma variacao simples dela, para ajudar o aluno a aprender.
+                    Se for NOISE, mantenha o mesmo nextContextId e next da frase anterior.
 
                     FORMATO DE RESPOSTA — INSTRUCOES CRITICAS:
                     - Voce deve responder EXCLUSIVAMENTE com um objeto JSON.
@@ -105,7 +110,7 @@ public class RaptorDynamic {
                     - NAO "pense em voz alta". Sua unica saida deve ser o JSON abaixo.
 
                     Exemplo de saida esperada (siga exatamente este formato):
-                    {"AnswerType": < "ANSWER" ou "DOUBT" >, "response": "sua resposta", "nextContextId": <id do contexto escolhido>, "next": "frase natural em portugues baseada no contexto"}
+                    {"AnswerType": <"ANSWER", "DOUBT" ou "NOISE">, "response": "sua resposta", "nextContextId": <id do contexto escolhido>, "next": "frase natural em portugues baseada no contexto"}
         """);
 
         String prompt = buildPrompt(content.toString());

@@ -41,8 +41,6 @@ public class GoogleCloudSTTProvider implements SpeechToTextProvider {
             return null;
         }
 
-        saveAudioToFile(audioData, audioFormat != null ? audioFormat : "webm");
-
         try {
             String base64Audio = Base64.getEncoder().encodeToString(audioData);
 
@@ -105,19 +103,4 @@ public class GoogleCloudSTTProvider implements SpeechToTextProvider {
         return "GoogleCloudSTT";
     }
 
-    private void saveAudioToFile(byte[] audioData, String extension) {
-        try {
-            Path dir = Paths.get("debug-audio");
-            Files.createDirectories(dir);
-            String timestamp = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss-SSS"));
-            String filename = "stt-input_" + timestamp + "." + extension;
-            Path filePath = dir.resolve(filename);
-            try (FileOutputStream fos = new FileOutputStream(filePath.toFile())) {
-                fos.write(audioData);
-            }
-            log.info("🔊 Audio salvo para debug: {} ({} bytes)", filePath.toAbsolutePath(), audioData.length);
-        } catch (IOException e) {
-            log.error("Falha ao salvar audio para debug", e);
-        }
-    }
 }
