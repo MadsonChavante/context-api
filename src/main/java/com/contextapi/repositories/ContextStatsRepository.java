@@ -9,10 +9,5 @@ import java.util.Optional;
 
 @Repository
 public interface ContextStatsRepository extends JpaRepository<ContextStats, Long> {
-
-    Optional<ContextStats> findByLessonIdAndContextId(Long lessonId, Long contextId);
-
-    List<ContextStats> findByLessonId(Long lessonId);
-
     Optional<ContextStats> findByContextId(Long contextId);
 }
