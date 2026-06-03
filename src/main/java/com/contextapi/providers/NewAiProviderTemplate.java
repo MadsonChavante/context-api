@@ -24,6 +24,11 @@ public class NewAiProviderTemplate implements AiProvider {
 
     @Override
     public String complete(String prompt, int maxTokens, double temperature) {
+        return complete(prompt, maxTokens, temperature, false);
+    }
+
+    @Override
+    public String complete(String prompt, int maxTokens, double temperature, boolean jsonMode) {
         if (!isConfigured()) {
             log.warn("{} provider not configured, skipping AI completion", getProviderName());
             return null;
@@ -31,16 +36,22 @@ public class NewAiProviderTemplate implements AiProvider {
 
         try {
             Map<String, Object> message = Map.of("role", "user", "content", prompt);
-            Map<String, Object> requestBody = Map.of(
-                    "model", model,
-                    "messages", List.of(message),
-                    "max_tokens", maxTokens,
-                    "temperature", temperature);
-
+            
+            Map<String, Object> requestBodyBuilder = new java.util.HashMap<>();
+            requestBodyBuilder.put("model", model);
+            requestBodyBuilder.put("messages", List.of(message));
+            requestBodyBuilder.put("max_tokens", maxTokens);
+            requestBodyBuilder.put("temperature", temperature);
+            
+            if (jsonMode) {
+                requestBodyBuilder.put("response_format", Map.of("type", "json_object"));
+                log.debug("{} request with JSON mode enabled", getProviderName());
+            }
+            
             Map<?, ?> response = webClient.post()
                     .uri(API_ENDPOINT)
                     .header("Authorization", "Bearer " + apiKey)
-                    .bodyValue(requestBody)
+                    .bodyValue(requestBodyBuilder)
                     .retrieve()
                     .bodyToMono(Map.class)
                     .onErrorResume(err -> {

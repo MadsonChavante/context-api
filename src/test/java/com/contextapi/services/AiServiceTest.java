@@ -9,6 +9,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyDouble;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -51,7 +52,7 @@ class AiServiceTest {
         @DisplayName("should return the AI-generated analysis text")
         void shouldReturnAnalysisText() {
             when(aiProvider.isConfigured()).thenReturn(true);
-            when(aiProvider.complete(anyString(), anyInt(), anyDouble()))
+            when(aiProvider.complete(anyString(), anyInt(), anyDouble(), anyBoolean()))
                     .thenReturn("Resumo da IA");
             AiService service = buildService();
 
@@ -59,28 +60,28 @@ class AiServiceTest {
 
             assertEquals("Resumo da IA", result);
             verify(aiProvider).isConfigured();
-            verify(aiProvider).complete(anyString(), anyInt(), anyDouble());
+            verify(aiProvider).complete(anyString(), anyInt(), anyDouble(), anyBoolean());
         }
 
         @Test
         @DisplayName("should sanitize content before sending to provider")
         void shouldSanitizeContent() {
             when(aiProvider.isConfigured()).thenReturn(true);
-            when(aiProvider.complete(anyString(), anyInt(), anyDouble()))
+            when(aiProvider.complete(anyString(), anyInt(), anyDouble(), anyBoolean()))
                     .thenReturn("Resposta");
             AiService service = buildService();
 
             String result = service.analyze("Analyze this content: %s", "content with\n\nmultiple\n\n\nlinebreaks");
 
             assertNotNull(result);
-            verify(aiProvider).complete(anyString(), anyInt(), anyDouble());
+            verify(aiProvider).complete(anyString(), anyInt(), anyDouble(), anyBoolean());
         }
 
         @Test
         @DisplayName("should truncate content longer than 1000 characters")
         void shouldTruncateContent() {
             when(aiProvider.isConfigured()).thenReturn(true);
-            when(aiProvider.complete(anyString(), anyInt(), anyDouble()))
+            when(aiProvider.complete(anyString(), anyInt(), anyDouble(), anyBoolean()))
                     .thenReturn("Resposta");
             AiService service = buildService();
             String longContent = "a".repeat(2000);
@@ -88,7 +89,7 @@ class AiServiceTest {
             String result = service.analyze("Analyze this content: %s", longContent);
 
             assertNotNull(result);
-            verify(aiProvider).complete(anyString(), anyInt(), anyDouble());
+            verify(aiProvider).complete(anyString(), anyInt(), anyDouble(), anyBoolean());
         }
     }
 
@@ -119,14 +120,14 @@ class AiServiceTest {
         @DisplayName("should delegate to provider with exact parameters")
         void shouldDelegateToProvider() {
             when(aiProvider.isConfigured()).thenReturn(true);
-            when(aiProvider.complete("test prompt", 200, 0.8))
+            when(aiProvider.complete("test prompt", 200, 0.8, false))
                     .thenReturn("Provider response");
             AiService service = buildService();
 
             String result = service.complete("test prompt", 200, 0.8);
 
             assertEquals("Provider response", result);
-            verify(aiProvider).complete("test prompt", 200, 0.8);
+            verify(aiProvider).complete("test prompt", 200, 0.8, false);
         }
     }
 

@@ -21,13 +21,17 @@ public class AiService {
     }
 
     public String complete(String prompt, int maxTokens, double temperature) {
+        return complete(prompt, maxTokens, temperature, false);
+    }
+
+    public String complete(String prompt, int maxTokens, double temperature, boolean jsonMode) {
         if (!aiProvider.isConfigured()) {
             log.warn("{} provider not configured, skipping AI completion", aiProvider.getProviderName());
             return null;
         }
 
-        log.debug("Sending request to {} provider", aiProvider.getProviderName());
-        return aiProvider.complete(prompt, maxTokens, temperature);
+        log.debug("Sending request to {} provider (jsonMode={})", aiProvider.getProviderName(), jsonMode);
+        return aiProvider.complete(prompt, maxTokens, temperature, jsonMode);
     }
 
     public String getProviderName() {
