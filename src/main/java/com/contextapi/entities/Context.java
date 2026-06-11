@@ -7,6 +7,9 @@ import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
+import java.util.ArrayList;
+import java.util.List;
+
 @Entity
 @Table(name = "contexts")
 @Data
@@ -25,4 +28,7 @@ public class Context {
 
     @Column(columnDefinition = "TEXT")
     private String aiAnalysis;
+
+    @OneToMany(mappedBy = "context", cascade = CascadeType.ALL, orphanRemoval = true)
+    private List<ContextStats> stats = new ArrayList<>();
 }

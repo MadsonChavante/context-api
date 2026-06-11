@@ -242,10 +242,12 @@ class ContextServiceTest {
         @DisplayName("should delete context when it exists")
         void shouldDeleteWhenContextExists() {
             when(contextRepository.findById(1L)).thenReturn(Optional.of(context));
+            when(contextStatsRepository.findByContextId(1L)).thenReturn(Optional.empty());
 
             contextService.delete(1L);
 
             verify(contextRepository).findById(1L);
+            verify(contextStatsRepository).findByContextId(1L);
             verify(contextRepository).delete(context);
         }
 

@@ -15,7 +15,6 @@ public class VoiceProviderConfig {
     @Value("${voice.tts.provider:google}")
     private String ttsProvider;
 
-    
     @Value("${google.cloud.api.key:}")
     private String googleApiKey;
 
@@ -34,7 +33,6 @@ public class VoiceProviderConfig {
     @Value("${google.cloud.tts.speaking-rate:1.0}")
     private String speakingRate;
 
-    
     @Value("${openai.api.key:}")
     private String openaiApiKey;
 
@@ -49,6 +47,15 @@ public class VoiceProviderConfig {
 
     @Value("${openai.stt.language:en}")
     private String openaiSttLanguage;
+
+    @Value("${openrouter.api.key:}")
+    private String openrouterApiKey;
+
+    @Value("${openrouter.tts.model:x-ai/grok-voice-tts-1.0}")
+    private String openrouterTtsModel;
+
+    @Value("${openrouter.tts.voice:rex}")
+    private String openrouterTtsVoice;
 
     @Bean
     public SpeechToTextProvider speechToTextProvider(WebClient webClient) {
@@ -65,6 +72,8 @@ public class VoiceProviderConfig {
     public TextToSpeechProvider textToSpeechProvider(WebClient webClient) {
         if ("openai".equalsIgnoreCase(ttsProvider) && openaiApiKey != null && !openaiApiKey.isBlank()) {
             return new OpenAiTTSProvider(webClient, openaiApiKey, openaiTtsModel, openaiTtsVoice);
+        } else if ("openrouter".equalsIgnoreCase(ttsProvider) && openrouterApiKey != null && !openrouterApiKey.isBlank()) {
+            return new OpenRouterTTSProvider(webClient, openrouterApiKey, openrouterTtsModel, openrouterTtsVoice);
         } else if (googleApiKey != null && !googleApiKey.isBlank()) {
             return new GoogleCloudTTSProvider(webClient, googleApiKey, ttsLanguage, ttsVoice, speakingRate);
         }

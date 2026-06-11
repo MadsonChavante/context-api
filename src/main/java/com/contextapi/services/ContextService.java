@@ -93,6 +93,12 @@ public class ContextService {
         log.debug("Deleting context with id: {}", id);
         Context context = contextRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException(CONTEXT_NOT_FOUND.formatted(id)));
+
+        contextStatsRepository.findByContextId(id).ifPresent(stats -> {
+            log.debug("Deleting associated stats for context id: {}", id);
+            contextStatsRepository.delete(stats);
+        });
+
         contextRepository.delete(context);
         log.info("Context deleted successfully with id: {}", id);
     }
